@@ -1,5 +1,6 @@
 import { getCalendarBusy, intervalEnd, isCalendarFree } from '../../calendar/src/index.mjs';
 import { getWeatherForSlots } from '../../weather/src/index.mjs';
+import { enrichCandidateAccessibility } from './accessibility.mjs';
 import { SYDNEY_TIME_ZONE } from './types.mjs';
 
 const USYD_TENNIS_LOCATION = Object.freeze({
@@ -77,6 +78,8 @@ async function enrichCandidates({
   location = USYD_TENNIS_LOCATION,
   weatherAdapter = getWeatherForSlots,
   calendarAdapter = getCalendarBusy,
+  accessibilityAdapter = null,
+  accessibilityOptions = null,
   timezone = location.timezone,
 } = {}) {
   if (!Array.isArray(candidates)) throw new Error('candidates must be an array');
@@ -109,12 +112,25 @@ async function enrichCandidates({
     }
   }
 
-  return attachCalendar(attachWeather(candidates, weatherRows), busyIntervals, {
+  let enriched = attachCalendar(attachWeather(candidates, weatherRows), busyIntervals, {
     status: calendarStatus,
     source: calendarSource,
     fallbackFrom: calendarFallbackFrom,
     fallbackReason: calendarFallbackReason,
   });
+
+  if (accessibilityOptions) {
+    const candidateAccessibilityOptions = {
+      candidates: enriched,
+      ...accessibilityOptions,
+    };
+    if (accessibilityAdapter) {
+      candidateAccessibilityOptions.accessibilityAdapter = accessibilityAdapter;
+    }
+    enriched = await enrichCandidateAccessibility(candidateAccessibilityOptions);
+  }
+
+  return enriched;
 }
 
 export {
