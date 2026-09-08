@@ -1,21 +1,25 @@
 import { chromium } from 'playwright';
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import {
+  canonicalAvailability,
+  legacyAvailabilityFromCanonical,
+} from '../../core/src/availability-schema.mjs';
+import {
+  chooseCourtToTriggerAvailability,
+  discoverTennisCourtsFromFacilities,
+  findCourtFacilities,
+  isLoginPage,
+  navigateToTennisFacilityList,
+  normalizeConfiguredUrl,
+} from './discovery.mjs';
+import {
+  createAvailabilityCapture,
+  fetchAvailabilityJson,
+  getVerificationToken,
+  prepareAvailabilityRequest,
+} from './public-client.mjs';
 
-const DEFAULT_BOOKING_URL = 'https://susf.perfectmind.com/';
-const DEFAULT_STORAGE_STATE_PATH = resolve('.auth/storageState.json');
+const DEFAULT_BOOKING_URL = 'https://susf.perfectmind.com/39161/Clients/BookMe4FacilityList/List?calendarId=7cb1945d-e899-4e40-96c4-8ee784ccfc2d&widgetId=c5b8cc8a-09fe-48ae-a693-df5c09f81adb&embed=False';
 const DEFAULT_CAPTURE_TIMEOUT_MS = 120_000;
-
-const sensitiveHeaderNames = new Set([
-  'authorization',
-  'cookie',
-  'pm-auth',
-  'pmauth',
-  'x-csrf-token',
-  'x-xsrf-token',
-  'requestverificationtoken',
-  '__requestverificationtoken',
-]);
 
 class SusfAvailabilityError extends Error {
   constructor(code, message = code, options) {
@@ -25,426 +29,12 @@ class SusfAvailabilityError extends Error {
   }
 }
 
-function normalizeConfiguredUrl(value) {
-  const trimmed = value.trim();
-  const markdownMatch = trimmed.match(/^\[(https?:\/\/[^\]]+)]\((https?:\/\/[^)]+)\)$/);
-  if (markdownMatch) return markdownMatch[2].replaceAll('\\&', '&');
-
-  const firstUrlMatch = trimmed.match(/https?:\/\/[^\])\s]+/);
-  if (firstUrlMatch) return firstUrlMatch[0].replaceAll('\\&', '&');
-
-  return trimmed.replaceAll('\\&', '&');
-}
-
 function todayIsoDate() {
   const date = new Date();
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
-}
-
-function formatDateLikeCaptured(isoDate, capturedValue) {
-  if (typeof capturedValue !== 'string') return isoDate;
-
-  const [, year, month, day] = isoDate.match(/^(\d{4})-(\d{2})-(\d{2})$/) ?? [];
-  if (!year) return isoDate;
-
-  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(capturedValue)) {
-    return `${Number(month)}/${Number(day)}/${year}`;
-  }
-
-  if (/^\d{1,2}-\d{1,2}-\d{4}$/.test(capturedValue)) {
-    return `${Number(month)}-${Number(day)}-${year}`;
-  }
-
-  if (/^\d{4}\/\d{1,2}\/\d{1,2}$/.test(capturedValue)) {
-    return `${year}/${Number(month)}/${Number(day)}`;
-  }
-
-  return isoDate;
-}
-
-function isFacilityAvailabilityUrl(url) {
-  return /FacilityAvailability/i.test(url);
-}
-
-function requestMentionsFacility(request, facilityId) {
-  if (!facilityId) return true;
-
-  const url = request.url();
-  if (url.includes(facilityId)) return true;
-
-  const postData = request.postData() ?? '';
-  return postData.includes(facilityId);
-}
-
-function sleep(ms) {
-  return new Promise((resolveSleep) => {
-    setTimeout(resolveSleep, ms);
-  });
-}
-
-function stripUnsafeRequestHeaders(headers) {
-  const safe = {};
-  for (const [name, value] of Object.entries(headers)) {
-    const lower = name.toLowerCase();
-    if (sensitiveHeaderNames.has(lower)) continue;
-    if (['host', 'connection', 'content-length', 'origin', 'referer'].includes(lower)) continue;
-    if (lower.startsWith('sec-')) continue;
-    safe[name] = value;
-  }
-  return safe;
-}
-
-function looksLikeLoginUrl(url) {
-  return /\/login\b|\/account\/login\b|signin|sign-in/i.test(url);
-}
-
-async function isLoginPage(page) {
-  if (looksLikeLoginUrl(page.url())) return true;
-
-  return page.evaluate(() => {
-    const passwordInputs = [...document.querySelectorAll('input[type="password"]')];
-    return passwordInputs.some((passwordInput) => {
-      const form = passwordInput.closest('form');
-      const action = form?.action ?? '';
-      if (/\/login\b|\/account\/login\b|signin|sign-in/i.test(action)) return true;
-
-      const scope = form ?? document.body;
-      const scopeText = scope?.innerText ?? '';
-      const hasUserField = Boolean(scope?.querySelector(
-        'input[type="email"], input[name*="email" i], input[name*="user" i], input[id*="email" i], input[id*="user" i]',
-      ));
-      return Boolean(hasUserField && /login|sign in/i.test(scopeText));
-    });
-  }).catch(() => false);
-}
-
-function getLandingPageBackUrl(rawUrl) {
-  try {
-    const url = new URL(rawUrl);
-    if (!/\/BookMe4LandingPages\/Facility/i.test(url.pathname)) return null;
-    return url.searchParams.get('landingPageBackUrl');
-  } catch {
-    return null;
-  }
-}
-
-async function pageHasTargetCourtFacilities(page) {
-  const courts = await findCourtFacilities(page);
-  return courts.length > 0;
-}
-
-async function navigateToTennisFacilityList(page, bookingUrl) {
-  await page.goto(bookingUrl, { waitUntil: 'domcontentloaded' });
-  await page.waitForLoadState('networkidle').catch(() => {});
-
-  if (await pageHasTargetCourtFacilities(page)) return page.url();
-
-  const landingPageBackUrl = getLandingPageBackUrl(page.url()) ?? getLandingPageBackUrl(bookingUrl);
-  if (landingPageBackUrl) {
-    await page.goto(landingPageBackUrl, { waitUntil: 'domcontentloaded' });
-    await page.waitForLoadState('networkidle').catch(() => {});
-    if (await pageHasTargetCourtFacilities(page)) return page.url();
-  }
-
-  const rentFacilityUrl = await page.evaluate(() => {
-    const links = [...document.querySelectorAll('a[href]')];
-    const match = links.find((link) => /Rent a Facility/i.test(link.textContent ?? ''));
-    return match?.href ?? null;
-  }).catch(() => null);
-
-  if (rentFacilityUrl) {
-    await page.goto(rentFacilityUrl, { waitUntil: 'domcontentloaded' });
-    await page.waitForLoadState('networkidle').catch(() => {});
-  }
-
-  if (await pageHasTargetCourtFacilities(page)) return page.url();
-
-  const clickedTennis = await page.evaluate(() => {
-    const controls = [
-      ...document.querySelectorAll('button, a, input[type="button"], input[type="submit"], [role="button"]'),
-    ];
-    const tennisControl = controls.find((control) => {
-      const text = [
-        control.textContent,
-        control.getAttribute('value'),
-        control.getAttribute('aria-label'),
-        control.getAttribute('title'),
-      ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
-      return /^Tennis$/i.test(text);
-    });
-    if (!tennisControl) return false;
-    tennisControl.scrollIntoView({ block: 'center', inline: 'center' });
-    tennisControl.click();
-    return true;
-  }).catch(() => false);
-
-  if (clickedTennis) {
-    await page.waitForLoadState('networkidle').catch(() => {});
-    await page.waitForFunction(() => document.querySelectorAll('[data-facilityid]').length > 0, null, {
-      timeout: 15_000,
-    }).catch(() => {});
-  }
-
-  return page.url();
-}
-
-async function getVerificationToken(page) {
-  return page.evaluate(() => {
-    const input = document.querySelector('input[name="__RequestVerificationToken"]');
-    if (input?.value) return input.value;
-
-    const meta = document.querySelector(
-      'meta[name="__RequestVerificationToken"], meta[name="csrf-token"], meta[name="request-verification-token"]',
-    );
-    if (meta?.content) return meta.content;
-
-    return null;
-  });
-}
-
-function parseTennisCourtName(label) {
-  const match = label.match(/\bTennis\s+(?:Synthetic\s+|Hard\s+)?Court\s+(\d+)\b/i);
-  if (!match) return null;
-  return `Court ${Number(match[1])}`;
-}
-
-function discoverTennisCourtsFromFacilities(facilities) {
-  const byFacilityId = new Map();
-
-  for (const facility of facilities) {
-    if (!facility.facilityId || byFacilityId.has(facility.facilityId)) continue;
-
-    const court = parseTennisCourtName(facility.label);
-    if (!court) continue;
-
-    byFacilityId.set(facility.facilityId, {
-      court,
-      domLabel: facility.label.match(/\bTennis\s+(?:Synthetic\s+|Hard\s+)?Court\s+\d+\b/i)?.[0] ?? court,
-      facilityId: facility.facilityId,
-    });
-  }
-
-  return [...byFacilityId.values()]
-    .sort((a, b) => {
-      const aNumber = Number(a.court.match(/\d+/)?.[0] ?? 0);
-      const bNumber = Number(b.court.match(/\d+/)?.[0] ?? 0);
-      return aNumber - bNumber || a.court.localeCompare(b.court);
-    });
-}
-
-async function findCourtFacilities(page) {
-  const facilities = await page.$$eval('[data-facilityid]', (nodes) => {
-    const clean = (value) => value.replace(/\s+/g, ' ').trim();
-
-    return nodes.map((node) => {
-      const element = node;
-      const facilityId = element.getAttribute('data-facilityid');
-      const candidates = [
-        element.getAttribute('aria-label'),
-        element.getAttribute('title'),
-        element.textContent,
-        element.closest('[data-name], [aria-label], [title]')?.getAttribute('data-name'),
-        element.closest('[data-name], [aria-label], [title]')?.getAttribute('aria-label'),
-        element.closest('[data-name], [aria-label], [title]')?.getAttribute('title'),
-        element.closest('li, tr, article, section, div')?.textContent,
-      ].filter(Boolean);
-
-      return {
-        facilityId,
-        label: clean(candidates.join(' ')),
-      };
-    }).filter((item) => item.facilityId);
-  });
-
-  return discoverTennisCourtsFromFacilities(facilities);
-}
-
-async function chooseCourtToTriggerAvailability(page, court) {
-  const clicked = await page.evaluate((facilityId) => {
-    const facilityNode = document.querySelector(`[data-facilityid="${facilityId}"]`);
-    if (!facilityNode) return false;
-
-    const root = facilityNode.closest('li, tr, article, section, .card, .facility, .facility-item, div') ?? facilityNode;
-    const candidates = [
-      ...root.querySelectorAll('button, a, input[type="button"], input[type="submit"], [role="button"]'),
-    ];
-
-    const choose = candidates.find((candidate) => {
-      const text = [
-        candidate.textContent,
-        candidate.getAttribute('value'),
-        candidate.getAttribute('aria-label'),
-        candidate.getAttribute('title'),
-      ].filter(Boolean).join(' ');
-      return /choose|select|book|availability/i.test(text);
-    });
-
-    const target = choose ?? facilityNode;
-    target.scrollIntoView({ block: 'center', inline: 'center' });
-    target.click();
-    return true;
-  }, court.facilityId);
-
-  if (!clicked) return false;
-
-  console.log(`No FacilityAvailability request observed yet; choosing ${court.domLabel} once to load its read-only availability grid.`);
-  await page.waitForLoadState('networkidle').catch(() => {});
-  return true;
-}
-
-function parseBody(body, contentType) {
-  if (!body) return { kind: 'empty', value: null };
-
-  if (/json/i.test(contentType)) {
-    return { kind: 'json', value: JSON.parse(body) };
-  }
-
-  if (/x-www-form-urlencoded/i.test(contentType) || body.includes('=')) {
-    return { kind: 'form', value: new URLSearchParams(body) };
-  }
-
-  return { kind: 'raw', value: body };
-}
-
-function setCaseInsensitive(target, wantedName, value) {
-  if (target instanceof URLSearchParams) {
-    const existing = [...target.keys()].find((key) => key.toLowerCase() === wantedName.toLowerCase());
-    target.set(existing ?? wantedName, String(value));
-    return true;
-  }
-
-  if (target && typeof target === 'object' && !Array.isArray(target)) {
-    const existing = Object.keys(target).find((key) => key.toLowerCase() === wantedName.toLowerCase());
-    target[existing ?? wantedName] = value;
-    return true;
-  }
-
-  return false;
-}
-
-function setCaseInsensitiveDeep(target, wantedName, value) {
-  if (!target || typeof target !== 'object') return false;
-
-  if (Array.isArray(target)) {
-    return target
-      .map((item) => setCaseInsensitiveDeep(item, wantedName, value))
-      .some(Boolean);
-  }
-
-  let changed = false;
-  for (const key of Object.keys(target)) {
-    if (key.toLowerCase() === wantedName.toLowerCase()) {
-      target[key] = value;
-      changed = true;
-    } else if (target[key] && typeof target[key] === 'object') {
-      changed = setCaseInsensitiveDeep(target[key], wantedName, value) || changed;
-    }
-  }
-
-  return changed;
-}
-
-function getCaseInsensitive(target, wantedName) {
-  if (target instanceof URLSearchParams) {
-    const existing = [...target.keys()].find((key) => key.toLowerCase() === wantedName.toLowerCase());
-    return existing ? target.get(existing) : undefined;
-  }
-
-  if (target && typeof target === 'object' && !Array.isArray(target)) {
-    const existing = Object.keys(target).find((key) => key.toLowerCase() === wantedName.toLowerCase());
-    return existing ? target[existing] : undefined;
-  }
-
-  return undefined;
-}
-
-function getCaseInsensitiveDeep(target, wantedName) {
-  if (!target || typeof target !== 'object') return undefined;
-
-  if (Array.isArray(target)) {
-    for (const item of target) {
-      const found = getCaseInsensitiveDeep(item, wantedName);
-      if (found !== undefined) return found;
-    }
-    return undefined;
-  }
-
-  const direct = getCaseInsensitive(target, wantedName);
-  if (direct !== undefined) return direct;
-
-  for (const child of Object.values(target)) {
-    const found = getCaseInsensitiveDeep(child, wantedName);
-    if (found !== undefined) return found;
-  }
-
-  return undefined;
-}
-
-function prepareUrl(capturedUrl, { facilityId, date, daysCount, durationMinutes }) {
-  const url = new URL(capturedUrl);
-  const capturedDate = getCaseInsensitive(url.searchParams, 'date');
-  const formattedDate = formatDateLikeCaptured(date, capturedDate);
-
-  setCaseInsensitive(url.searchParams, 'facilityId', facilityId);
-  setCaseInsensitive(url.searchParams, 'date', formattedDate);
-  setCaseInsensitive(url.searchParams, 'daysCount', daysCount);
-  setCaseInsensitive(url.searchParams, 'duration', durationMinutes);
-
-  return url.toString();
-}
-
-function prepareBody(captured, { facilityId, date, token, daysCount, durationMinutes }) {
-  const contentType = captured.headers['content-type'] ?? captured.headers['Content-Type'] ?? '';
-  const parsed = parseBody(captured.postData ?? '', contentType);
-
-  if (parsed.kind === 'empty') return undefined;
-  if (parsed.kind === 'raw') {
-    throw new Error('Captured FacilityAvailability request body is neither JSON nor form-urlencoded; refusing to guess.');
-  }
-
-  const body = parsed.value;
-  const capturedDate = getCaseInsensitiveDeep(body, 'date');
-  const formattedDate = formatDateLikeCaptured(date, capturedDate);
-
-  if (!setCaseInsensitiveDeep(body, 'facilityId', facilityId)) {
-    setCaseInsensitive(body, 'facilityId', facilityId);
-  }
-  if (!setCaseInsensitiveDeep(body, 'date', formattedDate)) {
-    setCaseInsensitive(body, 'date', formattedDate);
-  }
-  if (!setCaseInsensitiveDeep(body, 'daysCount', daysCount)) {
-    setCaseInsensitive(body, 'daysCount', daysCount);
-  }
-  if (!setCaseInsensitiveDeep(body, 'duration', durationMinutes)) {
-    setCaseInsensitive(body, 'duration', durationMinutes);
-  }
-
-  if (token) {
-    if (!setCaseInsensitiveDeep(body, '__RequestVerificationToken', token)) {
-      setCaseInsensitive(body, '__RequestVerificationToken', token);
-    }
-  }
-
-  if (parsed.kind === 'json') return JSON.stringify(body);
-  return body.toString();
-}
-
-function prepareHeaders(captured, token) {
-  const headers = stripUnsafeRequestHeaders(captured.headers);
-  if (token) {
-    const existingTokenHeader = Object.keys(captured.headers)
-      .find((name) => name.toLowerCase() === '__requestverificationtoken'
-        || name.toLowerCase() === 'requestverificationtoken'
-        || name.toLowerCase() === 'x-csrf-token'
-        || name.toLowerCase() === 'x-xsrf-token');
-    if (existingTokenHeader) {
-      headers[existingTokenHeader] = token;
-    }
-  }
-  return headers;
 }
 
 function collectArraysByKey(value, keyName, out = []) {
@@ -765,6 +355,7 @@ function buildRankedCandidates(rows, { durationMinutes }) {
         next_hour_start_time: nextHour,
         next_hour_also_available: Boolean(nextHour && availableKeys.has(`${row.court}|${row.date}|${nextHour}`)),
         price_options: row.price_options ?? [],
+        observedAt: row.observedAt,
       };
     })
     .sort((a, b) => {
@@ -775,70 +366,41 @@ function buildRankedCandidates(rows, { durationMinutes }) {
     });
 }
 
-function createAvailabilityCapture(page, facilityId = null, { captureTimeoutMs }) {
-  let captured = null;
-  let stopped = false;
-
-  const onRequest = (request) => {
-    if (!isFacilityAvailabilityUrl(request.url()) || captured) return;
-    if (!requestMentionsFacility(request, facilityId)) return;
-
-    captured = {
-      url: request.url(),
-      method: request.method(),
-      headers: request.headers(),
-      postData: request.postData(),
-    };
-    console.log('Captured a real FacilityAvailability request shape from the logged-in page.');
-  };
-
-  page.on('request', onRequest);
-
-  return {
-    async wait({ onNeedTrigger, initialDelayMs = 5_000 } = {}) {
-      await sleep(initialDelayMs);
-      if (captured || stopped) return captured;
-
-      if (onNeedTrigger) {
-        await onNeedTrigger();
-        await sleep(5_000);
-        if (captured || stopped) return captured;
-      }
-
-      console.log('');
-      console.log('No FacilityAvailability request has been observed yet.');
-      console.log('In the browser, click or change the booking UI once so the page loads availability. This script is only listening.');
-
-      const startedAt = Date.now();
-      while (!captured && !stopped && Date.now() - startedAt < captureTimeoutMs) {
-        await sleep(500);
-      }
-
-      return captured;
-    },
-
-    stop() {
-      stopped = true;
-      page.off('request', onRequest);
-    },
-  };
-}
-
 function toPublicAvailability(row) {
-  return {
-    venue: 'SUSF',
-    court: row.court,
-    facilityId: row.facilityId,
-    startTime: `${row.date}T${row.start_time}:00`,
+  const startTime = `${row.date}T${row.start_time}:00`;
+  const venue = 'SUSF';
+  const courtNumber = String(row.court).match(/\d+/)?.[0];
+  const canonical = canonicalAvailability({
+    provider: 'susf',
+    venue: {
+      id: 'susf',
+      name: venue,
+      providerVenueId: 'susf',
+    },
+    court: {
+      id: courtNumber ? `susf-court-${courtNumber}` : `susf-court-${String(row.court).toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+      name: row.court,
+      providerCourtId: row.facilityId,
+      surface: null,
+    },
+    startTime,
     durationMinutes: row.duration_minutes,
-    nextHourAlsoAvailable: row.next_hour_also_available,
     priceOptions: row.price_options,
-  };
+    provenance: {
+      source: 'live',
+      auth: 'public',
+      observedAt: row.observedAt,
+      availabilityMethod: 'direct',
+    },
+  });
+
+  return legacyAvailabilityFromCanonical(canonical, {
+    nextHourAlsoAvailable: row.next_hour_also_available,
+  });
 }
 
 async function readSusfAvailability({
   bookingUrl = process.env.SUSF_BOOKING_URL ?? DEFAULT_BOOKING_URL,
-  storageStatePath = DEFAULT_STORAGE_STATE_PATH,
   days = 7,
   durationMinutes = 60,
   captureTimeoutMs = Number(process.env.CAPTURE_TIMEOUT_MS ?? DEFAULT_CAPTURE_TIMEOUT_MS),
@@ -846,14 +408,8 @@ async function readSusfAvailability({
 } = {}) {
   const normalizedBookingUrl = normalizeConfiguredUrl(bookingUrl);
 
-  try {
-    await readFile(storageStatePath, 'utf8');
-  } catch {
-    throw new SusfAvailabilityError('SESSION_EXPIRED', `Missing ${storageStatePath}. Run npm run susf:login first.`);
-  }
-
   const browser = await chromium.launch({ headless });
-  const context = await browser.newContext({ storageState: storageStatePath });
+  const context = await browser.newContext();
   const page = await context.newPage();
 
   try {
@@ -901,42 +457,27 @@ async function readSusfAvailability({
         daysCount: days,
         durationMinutes,
       };
-      const url = prepareUrl(captured.url, requestOptions);
-      const headers = prepareHeaders(captured, token);
-      const body = prepareBody(captured, requestOptions);
-
-      const responseJson = await page.evaluate(async ({ url, method, headers, body }) => {
-        const response = await fetch(url, {
-          method,
-          headers,
-          body,
-          credentials: 'include',
-        });
-
-        if (!response.ok) {
-          throw new Error(`FacilityAvailability returned HTTP ${response.status}`);
-        }
-
-        return response.json();
-      }, {
-        url,
-        method: captured.method,
-        headers,
-        body,
-      });
+      const request = prepareAvailabilityRequest(captured, requestOptions);
+      const responseJson = await fetchAvailabilityJson(page, request);
 
       rows.push(...normalizeAvailability(responseJson, court.court, { durationMinutes })
         .map((row) => ({
           ...row,
           facilityId: court.facilityId,
           price_options: priceOptions,
+          observedAt: new Date().toISOString(),
         })));
     }
 
     rows.sort((a, b) => `${a.date} ${a.start_time} ${a.court}`.localeCompare(`${b.date} ${b.start_time} ${b.court}`));
     const rankedCandidates = buildRankedCandidates(rows, { durationMinutes });
 
-    return rankedCandidates.map(toPublicAvailability);
+    const availability = rankedCandidates.map(toPublicAvailability);
+    availability.discovery = {
+      facilityCount: courts.length,
+      courtCount: courts.length,
+    };
+    return availability;
   } finally {
     await browser.close();
   }
@@ -944,11 +485,7 @@ async function readSusfAvailability({
 
 async function getSusfAvailability(options = {}) {
   try {
-    const availability = await readSusfAvailability(options);
-    if (availability.length === 0) {
-      throw new SusfAvailabilityError('NO_AVAILABILITY');
-    }
-    return availability;
+    return await readSusfAvailability(options);
   } catch (error) {
     if (error instanceof SusfAvailabilityError) throw error;
     throw new SusfAvailabilityError('SUSF_ADAPTER_ERROR', error.message, { cause: error });
@@ -958,7 +495,6 @@ async function getSusfAvailability(options = {}) {
 export {
   DEFAULT_BOOKING_URL,
   DEFAULT_CAPTURE_TIMEOUT_MS,
-  DEFAULT_STORAGE_STATE_PATH,
   SusfAvailabilityError,
   buildRankedCandidates,
   discoverTennisCourtsFromFacilities,
@@ -969,4 +505,5 @@ export {
   normalizeRateTableFromPriceArrays,
   normalizeAvailability,
   readSusfAvailability,
+  toPublicAvailability,
 };

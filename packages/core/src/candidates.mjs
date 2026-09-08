@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto';
 import { getSusfAvailability } from '../../susf/src/index.mjs';
+import {
+  legacyAvailabilityFromCanonical,
+  validateCanonicalAvailability,
+} from './availability-schema.mjs';
 import { getSydneyLocalDateTime } from './features.mjs';
 
 function stableCandidateId({ provider, venue, court, startTime, durationMinutes }) {
@@ -7,32 +11,49 @@ function stableCandidateId({ provider, venue, court, startTime, durationMinutes 
   return createHash('sha256').update(input).digest('hex').slice(0, 16);
 }
 
+function factsFromAvailability(availability) {
+  if (!availability?.canonical) return availability;
+
+  const canonical = validateCanonicalAvailability(availability.canonical);
+  return legacyAvailabilityFromCanonical(canonical, {
+    nextHourAlsoAvailable: availability.nextHourAlsoAvailable ?? false,
+    sourceMetadata: {
+      itemId: availability.itemId,
+      officialUrl: availability.officialUrl,
+    },
+  });
+}
+
 function buildCandidate(availability) {
-  const provider = availability.venue;
-  const local = getSydneyLocalDateTime(availability.startTime);
+  const facts = factsFromAvailability(availability);
+  const canonical = availability?.canonical ? validateCanonicalAvailability(availability.canonical) : null;
+  const provider = facts.provider ?? facts.venue;
+  const local = getSydneyLocalDateTime(facts.startTime);
 
   return {
     id: stableCandidateId({
       provider,
-      venue: availability.venue,
-      court: availability.court,
-      startTime: availability.startTime,
-      durationMinutes: availability.durationMinutes,
+      venue: canonical?.venue.id ?? facts.venue,
+      court: canonical?.court.id ?? facts.court,
+      startTime: facts.startTime,
+      durationMinutes: facts.durationMinutes,
     }),
-    venue: availability.venue,
-    court: availability.court,
-    startTime: availability.startTime,
-    durationMinutes: availability.durationMinutes,
+    venue: facts.venue,
+    court: facts.court,
+    startTime: facts.startTime,
+    durationMinutes: facts.durationMinutes,
     features: {
-      nextHourFree: availability.nextHourAlsoAvailable,
+      nextHourFree: facts.nextHourAlsoAvailable,
       localTime: local.localTime,
       localDate: local.localDate,
       preferredTime: null,
-      price: null,
-      priceOptions: availability.priceOptions ?? [],
+      price: canonical?.price.amount ?? null,
+      priceOptions: facts.priceOptions ?? [],
     },
     source: {
       provider,
+      availability: canonical?.provenance ?? facts.provenance ?? null,
+      canonicalAvailability: canonical,
     },
   };
 }
