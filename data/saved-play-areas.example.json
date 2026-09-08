@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "areas": [
+    {
+      "id": "home",
+      "label": "Home",
+      "center": {
+        "lat": -33,
+        "lng": 151
+      },
+      "defaultRadiusMeters": 3000
+    },
+    {
+      "id": "usyd",
+      "label": "USYD",
+      "center": {
+        "lat": -33.8886,
+        "lng": 151.1873
+      },
+      "defaultRadiusMeters": 3000
+    }
+  ]
+}

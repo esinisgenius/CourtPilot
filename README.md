@@ -22,7 +22,8 @@ Implemented:
 - Open-Meteo weather enrichment
 - Google Calendar FreeBusy adapter
 - Enriched candidate hard filtering
-- Agent State and bounded replanning action schema
+- Agent State and Real LLM Replanner loop
+- Maps factual layer for location resolution, saved play areas, tennis venue discovery, venue-level travel time, and unified venue contracts
 - Tests
 
 Not implemented yet:
@@ -47,6 +48,9 @@ npm run weather:check
 npm run calendar:authorize
 npm run calendar:check
 npm run calendar:login
+npm run maps:resolve -- "USYD"
+npm run maps:venues -- "USYD"
+npm run maps:check -- "University of Sydney"
 npm run feasible
 npm test
 ```
@@ -63,9 +67,20 @@ Google Calendar is an optional fallback for non-macOS, cloud deployment, or othe
 
 Hard filtering is deterministic. Calendar busy is a default hard rejection; Calendar unknown is not treated as free. Weather is factual enrichment only unless the Preference Profile contains an explicit hard weather constraint, in which case unknown weather is not treated as good weather.
 
+Maps uses Google Maps Platform server APIs when `GOOGLE_MAPS_API_KEY` is configured. Location can come from explicit user text, a saved play area, or runtime device geolocation. Explicit user locations take priority and device geolocation is runtime context only; it is not written into the durable Preference Profile.
+
+Venue discovery starts with a deterministic 3 km radius. That radius is search policy, not a user distance preference. User phrases such as "near", "not too far", or "within 15 minutes" should be represented as `travel_time`; straight-line `geoDistanceMeters` is provider metadata only. The default travel mode is `TRANSIT` with `product_default` as its value source unless the user explicitly asks for walking, driving, or public transport.
+
+Maps-discovered venues are venue-level alternatives. Their availability is `unknown` unless reconciled to a verified provider such as SUSF. The system must not present a Google Places venue as bookable at a specific time without a real availability source.
+
+Google Maps real smoke status: EXTERNAL BLOCKER / NOT VERIFIED as of 2026-09-04. The Maps adapter and contracts are implemented and covered by offline synthetic/mocked tests, but real Google provider verification is blocked by Google Cloud review. Do not treat Google Places venue availability as verified until a future real smoke is completed after approval.
+
+The Real LLM Replanner consumes the Preference Profile, Agent State, and factual observations. It evaluates the current candidate set, accepts only bounded actions (`EXPAND_RADIUS`, `SWITCH_SEARCH_AREA`, `ASK_USER`, `SATISFACTORY`, `STOP`), validates the action schema, executes deterministic state changes, and then asks the caller for the next factual observation pass. Synthetic replanning tests use mocked Maps observations only.
+
 Runtime secrets and personal data are ignored:
 
 - `.auth/`
 - `.env`
 - `data/preferences.json`
+- `data/saved-play-areas.json`
 - `output/`

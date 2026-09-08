@@ -3,6 +3,7 @@ output/
 node_modules/
 .env
 data/preferences.json
+data/saved-play-areas.json
 .DS_Store
 *.log
 *.token
@@ -10,3 +11,4 @@ data/preferences.json
 *.cache
 storageState.json
 .build/
+.env.local

@@ -460,7 +460,83 @@ Forbidden actions:
 
 SUSF login must remain manual. Scripts may open a browser and save Playwright `storageState`, but must not read, store, or print usernames/passwords.
 
-## 14. MVP Scope
+## 14. Third-party Service Protection / SUSF Request Discipline
+
+SUSF / PerfectMind is a third-party production system. Development and verification must avoid unnecessary repeated live access.
+
+Default verification should prefer:
+
+- Unit tests
+- Mocks and fixtures
+- Cached availability
+- Saved non-sensitive synthetic or sample data
+
+Do not treat a real SUSF smoke test as the default validation step after every code change.
+
+These commands may access the same real SUSF backend:
+
+```bash
+npm run susf:check
+npm run candidates
+npm run preview
+```
+
+Do not run them consecutively unless there is a clear need. A single real availability fetch should be reused as much as possible across:
+
+- Candidate Core
+- Preference preview
+- Ranking
+- Future Weather / Calendar enrichment
+
+Do not fetch SUSF again merely because execution has moved into a different pipeline stage.
+
+SUSF adapter caching requirements:
+
+- Availability should default to a 10-minute cache TTL.
+- Identical queries within the TTL should prefer cached results.
+- Cache bypass must be explicit and reserved for user-requested live refreshes.
+
+Real SUSF request behavior must be conservative:
+
+- Avoid high-concurrency bursts.
+- Query courts with low concurrency or sequential requests.
+- Do not add aggressive concurrency to speed up tests.
+- Do not use meaningless retry loops.
+
+Retry behavior must be finite:
+
+- Use at most a small number of retries for transient network failures.
+- Do not keep retrying on `401`, `403`, `429`, or unusual anti-abuse responses.
+- Stop immediately and report abnormal status responses.
+
+Do not perform:
+
+- Load testing
+- Stress testing
+- Endpoint fuzzing
+- High-frequency polling
+- Rate-limit bypass
+- Anti-bot or CAPTCHA bypass
+- Simulation of many users
+
+Price trace, network investigation, and similar spikes are read-only investigation tools. Once their facts are verified, they must not become part of the normal recommendation path.
+
+`npm test` must remain offline by default and must not access SUSF.
+
+Real integration smoke tests should be separated from unit tests. Prefer explicit naming such as:
+
+```bash
+npm test
+npm run smoke:susf
+```
+
+In future Agent/MCP runtime behavior, repeated user recommendation requests should reuse recent availability when appropriate instead of fetching SUSF again for every natural-language message.
+
+If it is unclear whether an operation could have side effects on a third-party production system, default to not executing it and investigate read-only first.
+
+Booking, hold, checkout, and payment automation remain forbidden.
+
+## 15. MVP Scope
 
 MVP must support:
 
@@ -492,7 +568,7 @@ Explicitly out of scope:
 - Mobile app
 - Elaborate UI
 
-## 15. Product Principles
+## 16. Product Principles
 
 Do not assume the user knows their exact preference weights.
 
@@ -508,7 +584,7 @@ Most important principle:
 
 > LLMs handle ambiguity. Code guarantees factual correctness and safety.
 
-## 16. Done Definition
+## 17. Done Definition
 
 The user first sets a durable preference:
 
