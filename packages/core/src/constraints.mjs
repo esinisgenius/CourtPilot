@@ -1,3 +1,5 @@
+import { evaluateTransportThresholds } from './transport-preferences.mjs';
+
 function hardConstraints(profile) {
   return profile?.hardConstraints ?? [];
 }
@@ -84,6 +86,44 @@ function evaluateCalendar(candidate, preferenceProfile, options = {}) {
   return { accepted: true, failures: [] };
 }
 
+function transportConstraints(profile) {
+  return hardConstraints(profile).filter((constraint) => constraint.feature === 'travel_time');
+}
+
+function evaluateTransport(candidate, preferenceProfile) {
+  const constraints = transportConstraints(preferenceProfile);
+  const failures = [];
+
+  for (const constraint of constraints) {
+    const checks = evaluateTransportThresholds(candidate, constraint.rule ?? {});
+    for (const check of checks) {
+      if (check.accepted === false) {
+        failures.push({
+          feature: 'travel_time',
+          mode: check.mode,
+          reason: 'transport_time_exceeds_limit',
+          durationMinutes: check.durationMinutes,
+          maxMinutes: check.maxMinutes,
+        });
+      }
+      if (check.accepted === null) {
+        failures.push({
+          feature: 'travel_time',
+          mode: check.mode,
+          reason: check.reason,
+          factStatus: check.factStatus,
+          maxMinutes: check.maxMinutes,
+        });
+      }
+    }
+  }
+
+  return {
+    accepted: failures.length === 0,
+    failures,
+  };
+}
+
 function applyHardConstraints({
   candidates,
   preferenceProfile,
@@ -98,6 +138,7 @@ function applyHardConstraints({
     const reasons = [
       ...evaluateCalendar(candidate, preferenceProfile, { defaultCalendarBusyIsHard }).failures,
       ...evaluateWeather(candidate, preferenceProfile).failures,
+      ...evaluateTransport(candidate, preferenceProfile).failures,
     ];
 
     if (reasons.length === 0) {
@@ -113,5 +154,6 @@ function applyHardConstraints({
 export {
   applyHardConstraints,
   evaluateCalendar,
+  evaluateTransport,
   evaluateWeather,
 };

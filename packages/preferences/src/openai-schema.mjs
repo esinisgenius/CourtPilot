@@ -7,6 +7,7 @@ import {
   allowedObjectiveFeatures,
   allowedPeriods,
   allowedRelaxationDirections,
+  allowedTransportModes,
 } from './schema.mjs';
 
 const nullableString = { type: ['string', 'null'] };
@@ -120,6 +121,12 @@ const adjacencyRuleSchema = nullableStrictObject({
 const travelTimeRuleSchema = nullableStrictObject({
   maxMinutes: nullableInteger,
   preferredMaxMinutes: nullableInteger,
+  maxTransitMinutes: nullableInteger,
+  maxWalkMinutes: nullableInteger,
+  preferredTransportModes: {
+    type: ['array', 'null'],
+    items: { type: 'string', enum: [...allowedTransportModes] },
+  },
 });
 
 const weatherRuleSchema = nullableStrictObject({
@@ -207,6 +214,15 @@ const searchScopeSchema = strictObject({
   sourceText: nullableString,
 });
 
+const transportPreferenceSchema = strictObject({
+  maxTransitMinutes: nullableInteger,
+  maxWalkMinutes: nullableInteger,
+  preferredTransportModes: {
+    type: ['array', 'null'],
+    items: { type: 'string', enum: [...allowedTransportModes] },
+  },
+});
+
 const unresolvedPreferenceSchema = strictObject({
   text: { type: 'string' },
   reason: nullableString,
@@ -217,6 +233,7 @@ const openAiPreferenceProfileJsonSchema = strictObject({
   version: { type: 'integer', enum: [2] },
   searchWindowDays: { type: 'integer', minimum: 1, maximum: 30 },
   searchScope: searchScopeSchema,
+  transportPreference: transportPreferenceSchema,
   preferences: {
     type: 'array',
     items: softPreferenceSchema,

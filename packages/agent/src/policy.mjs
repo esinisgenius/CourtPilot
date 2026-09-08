@@ -1,5 +1,6 @@
 import { REPLANNING_ACTIONS, validateReplanningAction } from './actions.mjs';
 import { evaluateCandidateSet } from './evaluator.mjs';
+import { canExpandProviderScope } from './provider-scope.mjs';
 import { validateAgentState } from './state.mjs';
 
 function actionForWeakPreference(preference) {
@@ -7,13 +8,14 @@ function actionForWeakPreference(preference) {
   if (preference?.feature === 'start_time') return REPLANNING_ACTIONS.SHIFT_TIME_WINDOW;
   if (preference?.feature === 'court') return REPLANNING_ACTIONS.INCLUDE_NONPREFERRED_COURTS;
   if (preference?.feature === 'venue') return REPLANNING_ACTIONS.SEARCH_OTHER_VENUES;
+  if (preference?.feature === 'travel_time') return REPLANNING_ACTIONS.ASK_USER;
   return REPLANNING_ACTIONS.ASK_USER;
 }
 
 function heuristicReplanningAction(state, evaluation) {
   if (evaluation.satisfactory) {
     return {
-      selectedAction: REPLANNING_ACTIONS.STOP,
+      selectedAction: REPLANNING_ACTIONS.SATISFACTORY,
       targetPreference: null,
       rationale: 'The current candidate set is satisfactory.',
       expectedEffect: 'Return the current best candidates without further replanning.',
@@ -21,11 +23,20 @@ function heuristicReplanningAction(state, evaluation) {
   }
 
   if (state.candidates.length === 0) {
+    if (state.searchScope?.providerScope && canExpandProviderScope(state.searchScope.providerScope)) {
+      return {
+        selectedAction: REPLANNING_ACTIONS.EXPAND_VENUE_SET,
+        targetPreference: null,
+        rationale: 'No candidates are currently available from the observed provider scope.',
+        expectedEffect: 'Add the next configured public availability provider without inventing venues or URLs.',
+      };
+    }
+
     return {
-      selectedAction: REPLANNING_ACTIONS.EXPAND_DATE_WINDOW,
+      selectedAction: REPLANNING_ACTIONS.EXPAND_RADIUS,
       targetPreference: null,
       rationale: 'No candidates are currently available in the search scope.',
-      expectedEffect: 'Search additional days while preserving hard constraints.',
+      expectedEffect: 'Search a wider nearby venue radius while preserving hard constraints.',
     };
   }
 

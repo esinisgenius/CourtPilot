@@ -23,6 +23,7 @@ function createInitialAgentState({
   candidates = [],
   rejectedCandidates = [],
   failedConstraints = [],
+  factualObservations = {},
   actionsTaken = [],
   iteration = 0,
   status = 'READY',
@@ -34,6 +35,7 @@ function createInitialAgentState({
     candidates,
     rejectedCandidates,
     failedConstraints,
+    factualObservations,
     actionsTaken,
     iteration,
     status,
@@ -55,6 +57,7 @@ function validateAgentState(state) {
       'candidates',
       'rejectedCandidates',
       'failedConstraints',
+      'factualObservations',
       'actionsTaken',
       'iteration',
       'status',
@@ -77,6 +80,12 @@ function validateAgentState(state) {
 
   for (const key of ['candidates', 'rejectedCandidates', 'failedConstraints', 'actionsTaken']) {
     if (!Array.isArray(state[key])) issues.push(`${key} must be an array`);
+  }
+
+  if (!state.factualObservations
+    || typeof state.factualObservations !== 'object'
+    || Array.isArray(state.factualObservations)) {
+    issues.push('factualObservations must be an object');
   }
 
   if (!Number.isInteger(state.iteration) || state.iteration < 0) {

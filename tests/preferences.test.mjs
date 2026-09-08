@@ -235,19 +235,124 @@ test('adjacency required validates', () => {
 
 test('travel_time rule validates user-facing travel burden', () => {
   const profile = validatePreferenceProfile(normalizePreferenceProfile(baseProfile({
+    transportPreference: {
+      maxTransitMinutes: 30,
+      maxWalkMinutes: 15,
+      preferredTransportModes: ['TRANSIT', 'WALK'],
+    },
     preferences: [
       {
         feature: 'travel_time',
         type: 'soft',
         importance: 'medium',
-        rule: { preferredMaxMinutes: 20 },
+        rule: {
+          preferredMaxMinutes: 20,
+          maxTransitMinutes: 30,
+          maxWalkMinutes: 15,
+          preferredTransportModes: ['TRANSIT', 'WALK'],
+        },
       },
     ],
   })));
 
   assert.equal(profile.preferences[0].feature, 'travel_time');
   assert.equal(profile.preferences[0].rule.preferredMaxMinutes, 20);
+  assert.equal(profile.preferences[0].rule.maxTransitMinutes, 30);
+  assert.deepEqual(profile.transportPreference.preferredTransportModes, ['TRANSIT', 'WALK']);
   assert.equal(profile.preferences[0].relaxationDirection, 'longer_travel_time');
+});
+
+test('interpreter extracts soft maxTransitMinutes with relaxable farther-is-ok semantics', async () => {
+  const profile = await interpretPreferences('公交最好30分钟以内，远一点也行', {
+    provider: mockProvider(baseProfile({
+      transportPreference: {
+        maxTransitMinutes: 30,
+      },
+      preferences: [{
+        feature: 'travel_time',
+        type: 'soft',
+        importance: 'high',
+        rule: { maxTransitMinutes: 30 },
+        sourceText: '公交最好30分钟以内，远一点也行',
+      }],
+    })),
+  });
+
+  assert.equal(profile.transportPreference.maxTransitMinutes, 30);
+  assert.equal(profile.preferences[0].feature, 'travel_time');
+  assert.equal(profile.preferences[0].type, 'soft');
+  assert.equal(profile.preferences[0].relaxable, true);
+  assert.equal(profile.preferences[0].relaxationDirection, 'longer_travel_time');
+});
+
+test('interpreter extracts hard maxTransitMinutes when user says cannot exceed', async () => {
+  const profile = await interpretPreferences('公交不能超过30分钟', {
+    provider: mockProvider(baseProfile({
+      transportPreference: {
+        maxTransitMinutes: 30,
+      },
+      hardConstraints: [{
+        feature: 'travel_time',
+        type: 'hard',
+        importance: 'high',
+        priority: 'high',
+        relaxable: false,
+        rule: { maxTransitMinutes: 30 },
+        sourceText: '公交不能超过30分钟',
+      }],
+    })),
+  });
+
+  assert.equal(profile.transportPreference.maxTransitMinutes, 30);
+  assert.equal(profile.hardConstraints[0].feature, 'travel_time');
+  assert.equal(profile.hardConstraints[0].relaxable, false);
+  assert.equal(profile.preferences.length, 0);
+});
+
+test('interpreter extracts maxWalkMinutes and preferred transport modes', async () => {
+  const profile = await interpretPreferences('走路15分钟以内最好，更愿意坐公交，开车也可以', {
+    provider: mockProvider(baseProfile({
+      transportPreference: {
+        maxWalkMinutes: 15,
+        preferredTransportModes: ['TRANSIT', 'DRIVE'],
+      },
+      preferences: [{
+        feature: 'travel_time',
+        type: 'soft',
+        importance: 'medium',
+        rule: {
+          maxWalkMinutes: 15,
+          preferredTransportModes: ['TRANSIT', 'DRIVE'],
+        },
+        sourceText: '走路15分钟以内最好，更愿意坐公交，开车也可以',
+      }],
+    })),
+  });
+
+  assert.equal(profile.transportPreference.maxWalkMinutes, 15);
+  assert.deepEqual(profile.transportPreference.preferredTransportModes, ['TRANSIT', 'DRIVE']);
+  assert.deepEqual(profile.preferences[0].rule.preferredTransportModes, ['TRANSIT', 'DRIVE']);
+});
+
+test('transport schema rejects unsupported transfer count and modes', () => {
+  assert.throws(
+    () => validatePreferenceProfile(normalizePreferenceProfile(baseProfile({
+      transportPreference: {
+        maxTransitMinutes: 30,
+        maxTransfers: 1,
+      },
+    }))),
+    (error) => error.issues?.includes('transportPreference.maxTransfers is not allowed'),
+  );
+
+  assert.throws(
+    () => validatePreferenceProfile(normalizePreferenceProfile(baseProfile({
+      transportPreference: {
+        preferredTransportModes: ['BIKE'],
+      },
+    }))),
+    (error) => error.issues?.includes('transportPreference.preferredTransportModes must contain only TRANSIT, WALK, DRIVE'),
+  );
 });
 
 test('distance is not a user Preference feature', () => {

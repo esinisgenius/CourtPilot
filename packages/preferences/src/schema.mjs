@@ -46,6 +46,7 @@ const allowedDateRangeTypes = new Set([
   'date_range',
 ]);
 const allowedWeatherConditions = new Set(['no_rain', 'no_precipitation', 'not_too_hot', 'comfortable']);
+const allowedTransportModes = new Set(['TRANSIT', 'WALK', 'DRIVE']);
 const relaxationDirectionsByFeature = {
   price: new Set(['higher_price', 'ask_user']),
   next_hour_free: new Set(['shorter_duration', 'wider_time_window', 'ask_user']),
@@ -126,6 +127,10 @@ function stripNullableOptionals(value) {
     'sourceText',
     'reason',
     'relaxationDirection',
+    'transportPreference',
+    'maxTransitMinutes',
+    'maxWalkMinutes',
+    'preferredTransportModes',
   ]);
 
   const copy = {};
@@ -169,6 +174,23 @@ function normalizeSearchScope(profile) {
     delete scope.timeWindow;
   }
   return stripNullableOptionals(scope);
+}
+
+function normalizeTransportMode(mode) {
+  const normalized = String(mode ?? '').toUpperCase();
+  return normalized;
+}
+
+function normalizeTransportPreference(transportPreference = {}) {
+  const normalized = isPlainObject(transportPreference) ? stripNullableOptionals({ ...transportPreference }) : {};
+  if (normalized.maxTransitMinutes !== undefined) normalized.maxTransitMinutes = Number(normalized.maxTransitMinutes);
+  if (normalized.maxWalkMinutes !== undefined) normalized.maxWalkMinutes = Number(normalized.maxWalkMinutes);
+  if (Array.isArray(normalized.preferredTransportModes)) {
+    normalized.preferredTransportModes = [
+      ...new Set(normalized.preferredTransportModes.map(normalizeTransportMode).filter(Boolean)),
+    ];
+  }
+  return normalized;
 }
 
 function daysForDateRange(dateRange) {
@@ -297,6 +319,7 @@ function normalizePreferenceProfile(profile, { sourceText, updatedAt = new Date(
 
   normalized.version = PREFERENCE_VERSION;
   normalized.searchScope = normalizeSearchScope(normalized);
+  normalized.transportPreference = normalizeTransportPreference(normalized.transportPreference);
   normalized.searchWindowDays = normalized.searchScope.days;
   normalized.preferences = normalized.preferences ?? [];
   normalized.hardConstraints = normalized.hardConstraints ?? [];
@@ -821,10 +844,49 @@ function validateAdjacencyRule(rule, path, issues) {
   if (rule.preferred !== undefined && typeof rule.preferred !== 'boolean') issues.push(`${path}.rule.preferred must be boolean`);
 }
 
+function validateTransportModes(modes, path, issues) {
+  if (modes === undefined) return;
+  if (!Array.isArray(modes)) {
+    issues.push(`${path} must be an array`);
+    return;
+  }
+  for (const mode of modes) {
+    if (!allowedTransportModes.has(mode)) {
+      issues.push(`${path} must contain only ${[...allowedTransportModes].join(', ')}`);
+      return;
+    }
+  }
+}
+
 function validateTravelTimeRule(rule, path, issues) {
-  validateNoUnknownKeys(rule, ['maxMinutes', 'preferredMaxMinutes'], `${path}.rule`, issues);
+  validateNoUnknownKeys(rule, [
+    'maxMinutes',
+    'preferredMaxMinutes',
+    'maxTransitMinutes',
+    'maxWalkMinutes',
+    'preferredTransportModes',
+  ], `${path}.rule`, issues);
   validateInteger(rule.maxMinutes, `${path}.rule.maxMinutes`, issues, { min: 1 });
   validateInteger(rule.preferredMaxMinutes, `${path}.rule.preferredMaxMinutes`, issues, { min: 1 });
+  validateInteger(rule.maxTransitMinutes, `${path}.rule.maxTransitMinutes`, issues, { min: 1 });
+  validateInteger(rule.maxWalkMinutes, `${path}.rule.maxWalkMinutes`, issues, { min: 1 });
+  validateTransportModes(rule.preferredTransportModes, `${path}.rule.preferredTransportModes`, issues);
+}
+
+function validateTransportPreference(transportPreference, issues) {
+  if (!isPlainObject(transportPreference)) {
+    issues.push('transportPreference must be an object');
+    return;
+  }
+  validateNoUnknownKeys(
+    transportPreference,
+    ['maxTransitMinutes', 'maxWalkMinutes', 'preferredTransportModes'],
+    'transportPreference',
+    issues,
+  );
+  validateInteger(transportPreference.maxTransitMinutes, 'transportPreference.maxTransitMinutes', issues, { min: 1 });
+  validateInteger(transportPreference.maxWalkMinutes, 'transportPreference.maxWalkMinutes', issues, { min: 1 });
+  validateTransportModes(transportPreference.preferredTransportModes, 'transportPreference.preferredTransportModes', issues);
 }
 
 function validateWeatherRule(rule, path, issues) {
@@ -968,6 +1030,7 @@ function validatePreferenceProfile(profile) {
     'version',
     'searchWindowDays',
     'searchScope',
+    'transportPreference',
     'preferences',
     'hardConstraints',
     'objectives',
@@ -981,6 +1044,7 @@ function validatePreferenceProfile(profile) {
     issues.push('searchWindowDays must be an integer from 1 to 30');
   }
   validateSearchScope(profile.searchScope, issues);
+  validateTransportPreference(profile.transportPreference, issues);
 
   if (!Array.isArray(profile.preferences)) {
     issues.push('preferences must be an array');
@@ -1041,7 +1105,9 @@ export {
   allowedObjectiveFeatures,
   allowedPeriods,
   allowedRelaxationDirections,
+  allowedTransportModes,
   allowedTypes,
   normalizePreferenceProfile,
+  normalizeTransportPreference,
   validatePreferenceProfile,
 };

@@ -22,3 +22,35 @@ export {
   createInitialAgentState,
   validateAgentState,
 } from './state.mjs';
+
+export {
+  expandVenueSet,
+  expandSearchRadius,
+  includeNonPreferredCourts,
+  normalizeSearchScope,
+  switchSearchArea,
+  withNormalizedSearchScope,
+} from './search-scope.mjs';
+
+export {
+  DEFAULT_PROVIDER_REGISTRY,
+  canExpandProviderScope,
+  markProviderObserved,
+  nextExpandableProviderId,
+  normalizeProviderScope,
+} from './provider-scope.mjs';
+
+export {
+  DEFAULT_PROVIDER_FETCHERS,
+  mergeCandidates,
+  observeConfiguredAvailabilityProviders,
+} from './observations.mjs';
+
+export {
+  ReplannerError,
+  evaluateReplanningContext,
+  executeReplanningAction,
+  runReplanningLoop,
+  validateBoundedRealReplanningAction,
+  validateFactualObservations,
+} from './replanner.mjs';

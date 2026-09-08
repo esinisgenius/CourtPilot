@@ -1,4 +1,8 @@
-import { matchesStartTimeRule } from '../../core/src/index.mjs';
+import {
+  candidateMatchesTransportPreference,
+  candidatePreferredTransportModes,
+  matchesStartTimeRule,
+} from '../../core/src/index.mjs';
 
 function preferencePriority(preference) {
   return preference.priority ?? preference.importance ?? 'uncertain';
@@ -10,6 +14,14 @@ function preferenceMatchesCandidate(preference, candidate) {
 
   if (preference.feature === 'next_hour_free') {
     return candidate.features?.nextHourFree === preference.target;
+  }
+
+  if (preference.feature === 'consecutive_availability') {
+    const minutes = preference.rule?.minMinutes ?? preference.rule?.preferredMinutes;
+    if (minutes === 120 && typeof candidate.features?.nextHourFree === 'boolean') {
+      return candidate.features.nextHourFree;
+    }
+    return null;
   }
 
   if (preference.feature === 'start_time' && preference.rule && candidate.features?.localTime) {
@@ -26,6 +38,13 @@ function preferenceMatchesCandidate(preference, candidate) {
 
   if (preference.feature === 'price') {
     return candidate.features?.price !== null && candidate.features?.price !== undefined;
+  }
+
+  if (preference.feature === 'travel_time') {
+    const thresholdMatch = candidateMatchesTransportPreference(candidate, preference.rule ?? {});
+    if (thresholdMatch !== null) return thresholdMatch;
+    const modeMatch = candidatePreferredTransportModes(candidate, preference.rule ?? {});
+    return modeMatch?.matches ?? null;
   }
 
   return null;
@@ -48,11 +67,23 @@ function evaluateCandidateSet({
   rejectedCandidates = [],
   preferences = {},
   failedConstraints = [],
+  factualObservations = {},
   minCandidates = 1,
 } = {}) {
   const hardFailures = failedHardConstraintsFromRejected(rejectedCandidates, failedConstraints);
   const softPreferences = preferences.preferences ?? [];
   const weakPreferences = [];
+  const observationIssues = [];
+  const observedVenues = factualObservations.maps?.venues ?? factualObservations.venues ?? [];
+  const unknownAvailabilityVenues = observedVenues.filter((venue) => venue.availability?.status === 'unknown');
+
+  if (candidates.length === 0 && unknownAvailabilityVenues.length > 0) {
+    observationIssues.push({
+      code: 'maps_venue_availability_not_verified',
+      reason: 'Maps venue observations are venue-level only and do not verify bookable court availability.',
+      count: unknownAvailabilityVenues.length,
+    });
+  }
 
   for (const preference of softPreferences) {
     const matches = candidates
@@ -84,6 +115,7 @@ function evaluateCandidateSet({
   const reasons = [];
   if (candidates.length < minCandidates) reasons.push('candidate_count_below_minimum');
   if (hardFailures.length > 0) reasons.push('hard_constraints_failed');
+  if (observationIssues.length > 0) reasons.push('factual_observations_insufficient');
   if (weakPreferences.some((preference) => preference.priority === 'high')) {
     reasons.push('high_priority_preferences_weak');
   }
@@ -93,6 +125,7 @@ function evaluateCandidateSet({
     reasons,
     failedConstraints: hardFailures,
     weakPreferences,
+    observationIssues,
   };
 }
 

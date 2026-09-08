@@ -7,6 +7,13 @@ export {
 } from './candidates.mjs';
 
 export {
+  canonicalAvailability,
+  legacyAvailabilityFromCanonical,
+  validateCanonicalAvailability,
+  withSydneyOffset,
+} from './availability-schema.mjs';
+
+export {
   annotateCandidateWithPreferences,
   getSydneyLocalDateTime,
   matchesStartTimeRule,
@@ -29,5 +36,30 @@ export {
 export {
   applyHardConstraints,
   evaluateCalendar,
+  evaluateTransport,
   evaluateWeather,
 } from './constraints.mjs';
+
+export {
+  attachVenueToCandidate,
+  venueToCandidateVenueFeature,
+} from './venues.mjs';
+
+export {
+  attachAccessibility,
+  candidateVenueInput,
+  candidateVenueKey,
+  enrichCandidateAccessibility,
+  unknownAccessibility,
+} from './accessibility.mjs';
+
+export {
+  TRANSPORT_MODES,
+  candidateMatchesTransportPreference,
+  candidatePreferredTransportModes,
+  evaluateTransportThresholds,
+  normalizeTransportMode,
+  normalizeTransportModes,
+  routeFactStatus,
+  transportPreferenceMatchDetail,
+} from './transport-preferences.mjs';

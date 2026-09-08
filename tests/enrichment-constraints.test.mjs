@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {
   applyHardConstraints,
   attachCalendar,
+  candidatePreferredTransportModes,
   enrichCandidates,
+  evaluateTransport,
 } from '../packages/core/src/index.mjs';
 import {
   createInitialAgentState,
@@ -73,6 +75,60 @@ function withWeather(baseCandidate, weather) {
   };
 }
 
+function withAccessibility(baseCandidate, accessibility) {
+  return {
+    ...baseCandidate,
+    accessibility,
+    features: {
+      ...baseCandidate.features,
+      accessibility,
+    },
+  };
+}
+
+function accessibility({
+  walkMinutes = 12,
+  transitMinutes = 25,
+  driveMinutes = 10,
+  walkReason = null,
+  transitReason = null,
+  driveReason = null,
+} = {}) {
+  return {
+    origin: { placeId: 'origin', label: 'USYD' },
+    walk: { durationMinutes: walkMinutes, distanceMeters: walkMinutes === null ? null : walkMinutes * 100, unavailableReason: walkReason },
+    transit: {
+      durationMinutes: transitMinutes,
+      distanceMeters: transitMinutes === null ? null : transitMinutes * 100,
+      departureTime: '2026-09-03T08:15:00.000Z',
+      unavailableReason: transitReason,
+    },
+    drive: { durationMinutes: driveMinutes, distanceMeters: driveMinutes === null ? null : driveMinutes * 100, unavailableReason: driveReason },
+    source: 'google_routes',
+    observedAt: '2026-09-03T00:00:00.000Z',
+  };
+}
+
+function transportProfile({ hard = [], soft = [], transportPreference = {} } = {}) {
+  return normalizePreferenceProfile({
+    version: 2,
+    searchWindowDays: 7,
+    searchScope: {
+      days: 7,
+      sourceText: 'synthetic transport',
+    },
+    transportPreference,
+    preferences: soft,
+    hardConstraints: hard,
+    objectives: [],
+    unresolvedPreferences: [],
+    sourceText: 'synthetic transport',
+    updatedAt: '2026-09-03T00:00:00.000Z',
+  }, {
+    updatedAt: '2026-09-03T00:00:00.000Z',
+  });
+}
+
 test('calendar busy candidate is rejected by default hard policy', () => {
   const [current] = attachCalendar([candidate('busy')], [
     { start: '2026-09-03T09:30:00.000Z', end: '2026-09-03T10:30:00.000Z' },
@@ -85,6 +141,162 @@ test('calendar busy candidate is rejected by default hard policy', () => {
 
   assert.equal(result.accepted.length, 0);
   assert.equal(result.rejected[0].reasons[0].reason, 'calendar_conflict');
+});
+
+test('hard maxTransitMinutes rejects only known transit limit violations', () => {
+  const current = attachCalendar([
+    withAccessibility(candidate('too-far'), accessibility({ transitMinutes: 35 })),
+  ], [])[0];
+  const result = applyHardConstraints({
+    candidates: [current],
+    preferenceProfile: transportProfile({
+      hard: [{
+        feature: 'travel_time',
+        type: 'hard',
+        importance: 'high',
+        priority: 'high',
+        rule: { maxTransitMinutes: 30 },
+      }],
+      transportPreference: { maxTransitMinutes: 30 },
+    }),
+  });
+
+  assert.equal(result.accepted.length, 0);
+  assert.equal(result.rejected[0].reasons[0].reason, 'transport_time_exceeds_limit');
+  assert.equal(result.rejected[0].reasons[0].mode, 'TRANSIT');
+});
+
+test('hard transport missing accessibility is distinct from exceeding the limit', () => {
+  const current = attachCalendar([candidate('missing-accessibility')], [])[0];
+  const result = evaluateTransport(current, transportProfile({
+    hard: [{
+      feature: 'travel_time',
+      type: 'hard',
+      importance: 'high',
+      priority: 'high',
+      rule: { maxTransitMinutes: 30 },
+    }],
+  }));
+
+  assert.equal(result.accepted, false);
+  assert.equal(result.failures[0].reason, 'accessibility_missing');
+  assert.equal(result.failures[0].factStatus, 'unknown');
+});
+
+test('route unavailable is distinct from exceeding the transport limit', () => {
+  const current = withAccessibility(candidate('route-unavailable'), accessibility({
+    transitMinutes: null,
+    transitReason: 'route_not_found',
+  }));
+  const result = evaluateTransport(current, transportProfile({
+    hard: [{
+      feature: 'travel_time',
+      type: 'hard',
+      importance: 'high',
+      priority: 'high',
+      rule: { maxTransitMinutes: 30 },
+    }],
+  }));
+
+  assert.equal(result.accepted, false);
+  assert.equal(result.failures[0].reason, 'route_not_found');
+  assert.equal(result.failures[0].factStatus, 'unavailable');
+});
+
+test('origin missing and provider error accessibility are distinct factual failures', () => {
+  for (const reason of ['origin_missing', 'provider_error']) {
+    const current = withAccessibility(candidate(reason), accessibility({
+      transitMinutes: null,
+      transitReason: reason,
+    }));
+    const result = evaluateTransport(current, transportProfile({
+      hard: [{
+        feature: 'travel_time',
+        type: 'hard',
+        importance: 'high',
+        priority: 'high',
+        rule: { maxTransitMinutes: 30 },
+      }],
+    }));
+
+    assert.equal(result.accepted, false);
+    assert.equal(result.failures[0].reason, reason);
+    assert.notEqual(result.failures[0].reason, 'transport_time_exceeds_limit');
+  }
+});
+
+test('soft maxTransitMinutes does not hard reject candidates over the preferred limit', () => {
+  const current = attachCalendar([
+    withAccessibility(candidate('soft-far'), accessibility({ transitMinutes: 35 })),
+  ], [])[0];
+  const preferenceProfile = transportProfile({
+    soft: [{
+      feature: 'travel_time',
+      type: 'soft',
+      importance: 'high',
+      priority: 'high',
+      rule: { maxTransitMinutes: 30 },
+      relaxable: true,
+    }],
+    transportPreference: { maxTransitMinutes: 30 },
+  });
+  const hardResult = applyHardConstraints({ candidates: [current], preferenceProfile });
+  const evaluation = evaluateCandidateSet({
+    candidates: hardResult.accepted,
+    preferenceProfile,
+    preferences: preferenceProfile,
+  });
+
+  assert.equal(hardResult.accepted.length, 1);
+  assert.equal(evaluation.satisfactory, false);
+  assert.equal(evaluation.weakPreferences[0].feature, 'travel_time');
+  assert.equal(evaluation.weakPreferences[0].relaxable, true);
+});
+
+test('maxWalkMinutes uses candidate accessibility walk facts', () => {
+  const current = withAccessibility(candidate('walkable'), accessibility({ walkMinutes: 14 }));
+  const preferenceProfile = transportProfile({
+    soft: [{
+      feature: 'travel_time',
+      type: 'soft',
+      importance: 'high',
+      priority: 'high',
+      rule: { maxWalkMinutes: 15 },
+      relaxable: true,
+    }],
+    transportPreference: { maxWalkMinutes: 15 },
+  });
+  const evaluation = evaluateCandidateSet({
+    candidates: [current],
+    preferences: preferenceProfile,
+  });
+
+  assert.equal(evaluation.satisfactory, true);
+});
+
+test('preferred transport mode ranking signal does not forbid unlisted modes', () => {
+  const transitCandidate = withAccessibility(candidate('transit'), accessibility({ transitMinutes: 24, walkMinutes: 50 }));
+  const driveCandidate = withAccessibility(candidate('drive'), accessibility({ transitMinutes: null, transitReason: 'route_not_found', driveMinutes: 12 }));
+  const preferenceProfile = transportProfile({
+    soft: [{
+      feature: 'travel_time',
+      type: 'soft',
+      importance: 'medium',
+      priority: 'medium',
+      rule: { preferredTransportModes: ['TRANSIT'] },
+      relaxable: true,
+    }],
+    transportPreference: { preferredTransportModes: ['TRANSIT'] },
+  });
+  const evaluation = evaluateCandidateSet({
+    candidates: [transitCandidate, driveCandidate],
+    preferences: preferenceProfile,
+  });
+
+  assert.equal(candidatePreferredTransportModes(transitCandidate, preferenceProfile.transportPreference).matches, true);
+  assert.equal(candidatePreferredTransportModes(driveCandidate, preferenceProfile.transportPreference).matches, false);
+  assert.equal(evaluation.satisfactory, true);
+  assert.equal(evaluation.weakPreferences.length, 0);
 });
 
 test('calendar free candidate is accepted when no other hard constraint fails', () => {

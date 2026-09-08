@@ -8,8 +8,10 @@ export {
   allowedObjectiveDirections,
   allowedObjectiveFeatures,
   allowedPeriods,
+  allowedTransportModes,
   allowedTypes,
   normalizePreferenceProfile,
+  normalizeTransportPreference,
   validatePreferenceProfile,
 } from './schema.mjs';
 

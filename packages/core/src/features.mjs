@@ -63,6 +63,13 @@ function annotateCandidateWithPreferences(candidate, profile) {
       matches.next_hour_free = candidate.features.nextHourFree === preference.target;
     }
 
+    if (preference.feature === 'consecutive_availability') {
+      const requiredMinutes = preference.rule?.minMinutes ?? preference.rule?.preferredMinutes;
+      matches.consecutive_availability = requiredMinutes === 120
+        ? candidate.features.nextHourFree === true
+        : null;
+    }
+
     if (preference.feature === 'price') {
       matches.price = candidate.features.price === null
         ? (candidate.features.priceOptions?.length > 0 ? 'options_available' : 'unknown')
