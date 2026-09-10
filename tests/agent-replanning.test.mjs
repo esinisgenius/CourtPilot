@@ -5,14 +5,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   REPLANNING_ACTIONS,
+  EVALUATOR_STATUS,
   ReplannerError,
   ReplanningActionSchemaError,
   chooseReplanningAction,
   createInitialAgentState,
   evaluateCandidateSet,
+  evaluateCurrentCandidateSet,
   evaluateReplanningContext,
   runReplanningLoop,
   observeConfiguredAvailabilityProviders,
+  shiftTimeWindow,
   validateBoundedRealReplanningAction,
   validateReplanningAction,
 } from '../packages/agent/src/index.mjs';
@@ -219,6 +222,102 @@ test('no candidates in configured provider scope expands venue set before radius
   assert.equal(action.selectedAction, REPLANNING_ACTIONS.EXPAND_VENUE_SET);
 });
 
+test('preferred courts unavailable includes non-preferred courts before generic expansion', async () => {
+  const preferences = profile([
+    {
+      feature: 'court',
+      type: 'soft',
+      value: 'Court 4',
+      priority: 'high',
+      importance: 'high',
+      relaxable: true,
+    },
+  ]);
+  const currentState = state({
+    preferences,
+    candidates: [],
+    searchScope: {
+      courtScope: {
+        includeNonPreferred: false,
+        preferredCourts: ['Court 4', 'Court 5', 'Court 6'],
+      },
+    },
+    failedConstraints: ['preferred_courts_unavailable'],
+  });
+  const evaluation = evaluateCandidateSet({
+    candidates: currentState.candidates,
+    preferences,
+    failedConstraints: currentState.failedConstraints,
+  });
+  const action = await chooseReplanningAction(currentState, { evaluation });
+
+  assert.equal(action.selectedAction, REPLANNING_ACTIONS.INCLUDE_NONPREFERRED_COURTS);
+  assert.equal(action.targetPreference, 'court');
+});
+
+test('included non-preferred courts do not keep failing the relaxed soft court preference', async () => {
+  const preferences = profile([
+    {
+      feature: 'court',
+      type: 'soft',
+      value: 'Court 4',
+      priority: 'high',
+      importance: 'high',
+      relaxable: true,
+    },
+  ]);
+  const currentState = state({
+    preferences,
+    candidates: [candidate({ id: 'court-2', court: 'Court 2' })],
+    actionsTaken: [{
+      selectedAction: REPLANNING_ACTIONS.INCLUDE_NONPREFERRED_COURTS,
+      targetPreference: 'court',
+      parameters: {},
+      rationale: 'Preferred courts were unavailable.',
+      expectedEffect: 'Include non-preferred courts for this run.',
+      iteration: 0,
+    }],
+  });
+  const { evaluation } = await evaluateCurrentCandidateSet(currentState);
+
+  assert.equal(evaluation.status, EVALUATOR_STATUS.SATISFACTORY);
+  assert.equal(evaluation.topCandidateSoftJudgements[0].status, 'relaxed_by_replanning');
+});
+
+test('time-window availability failure shifts within hard start-time bounds', async () => {
+  const preferences = profile([], [
+    {
+      feature: 'start_time',
+      type: 'hard',
+      rule: { after: '17:00' },
+      priority: 'high',
+      importance: 'high',
+      relaxable: false,
+    },
+  ]);
+  const currentState = state({
+    preferences,
+    candidates: [],
+    searchScope: {
+      timeWindow: { after: '17:00' },
+    },
+    failedConstraints: ['no_availability_in_time_window'],
+  });
+  const evaluation = evaluateCandidateSet({
+    candidates: currentState.candidates,
+    preferences,
+    failedConstraints: currentState.failedConstraints,
+  });
+  const action = await chooseReplanningAction(currentState, { evaluation });
+  const shifted = shiftTimeWindow(currentState);
+
+  assert.equal(action.selectedAction, REPLANNING_ACTIONS.SHIFT_TIME_WINDOW);
+  assert.equal(action.targetPreference, 'start_time');
+  assert.doesNotThrow(() => validateBoundedRealReplanningAction(action));
+  assert.deepEqual(shifted.searchScope.timeWindow, { after: '17:00' });
+  assert.equal(shifted.searchScope.temporalShiftSemantics, 'within_hard_start_time_bounds');
+});
+
 test('only low quality candidates require replanning', async () => {
   const currentState = state({
     candidates: [candidate({ id: 'weak', nextHourFree: false })],
@@ -232,7 +331,7 @@ test('only low quality candidates require replanning', async () => {
   assert.equal(evaluation.satisfactory, false);
   assert.deepEqual(evaluation.reasons, ['high_priority_preferences_weak']);
   assert.equal(evaluation.weakPreferences[0].feature, 'next_hour_free');
-  assert.equal(action.selectedAction, REPLANNING_ACTIONS.ASK_USER);
+  assert.equal(action.selectedAction, REPLANNING_ACTIONS.EXPAND_RADIUS);
 });
 
 test('high quality candidates are satisfactory and stop replanning', async () => {
@@ -246,6 +345,223 @@ test('high quality candidates are satisfactory and stop replanning', async () =>
   assert.equal(evaluation.satisfactory, true);
   assert.deepEqual(evaluation.reasons, []);
   assert.equal(action.selectedAction, REPLANNING_ACTIONS.SATISFACTORY);
+});
+
+test('candidate-set evaluator uses the top ranked candidate for satisfactory status', async () => {
+  const preferences = profile([
+    {
+      feature: 'next_hour_free',
+      type: 'soft',
+      target: true,
+      priority: 'high',
+      importance: 'high',
+      relaxable: true,
+    },
+  ]);
+  const currentState = state({
+    preferences,
+    candidates: [
+      candidate({ id: 'good-top', nextHourFree: true }),
+      candidate({ id: 'weak-second', nextHourFree: false }),
+    ],
+  });
+  const { evaluation, rankerResult } = await evaluateCurrentCandidateSet(currentState);
+
+  assert.equal(rankerResult.rankedCandidates[0].candidateId, 'good-top');
+  assert.equal(evaluation.status, EVALUATOR_STATUS.SATISFACTORY);
+  assert.equal(evaluation.topCandidateId, 'good-top');
+});
+
+test('no hard-feasible candidates returns NO_FEASIBLE_CANDIDATES', () => {
+  const preferences = profile([], [{
+    feature: 'travel_time',
+    type: 'hard',
+    rule: { maxTransitMinutes: 30 },
+    priority: 'high',
+    importance: 'high',
+    relaxable: false,
+  }]);
+  const hardResult = applyHardConstraints({
+    candidates: [accessibleCandidate({ id: 'too-far', transitMinutes: 45 })],
+    preferenceProfile: preferences,
+    defaultCalendarBusyIsHard: false,
+  });
+  const evaluation = evaluateCandidateSet({
+    candidates: hardResult.accepted,
+    rejectedCandidates: hardResult.rejected,
+    preferences,
+  });
+
+  assert.equal(evaluation.status, EVALUATOR_STATUS.NO_FEASIBLE_CANDIDATES);
+  assert.equal(evaluation.satisfactory, false);
+  assert.equal(evaluation.failedConstraints[0].reason, 'transport_time_exceeds_limit');
+});
+
+test('multiple high-priority soft violations need replanning', async () => {
+  const preferences = profile([
+    {
+      feature: 'travel_time',
+      type: 'soft',
+      rule: { maxTransitMinutes: 30, preferredTransportModes: ['TRANSIT'] },
+      priority: 'high',
+      importance: 'high',
+      relaxable: true,
+    },
+    {
+      feature: 'next_hour_free',
+      type: 'soft',
+      target: true,
+      priority: 'high',
+      importance: 'high',
+      relaxable: true,
+    },
+  ]);
+  preferences.transportPreference = { maxTransitMinutes: 30, preferredTransportModes: ['TRANSIT'] };
+  const currentState = state({
+    preferences,
+    candidates: [accessibleCandidate({ id: 'bad-top', transitMinutes: 55 })],
+  });
+  currentState.candidates[0].features.nextHourFree = false;
+  const { evaluation } = await evaluateCurrentCandidateSet(currentState);
+
+  assert.equal(evaluation.status, EVALUATOR_STATUS.NEEDS_REPLANNING);
+  assert.equal(evaluation.reasons.includes('top_candidate_multiple_high_priority_soft_violations'), true);
+  assert.deepEqual(evaluation.softViolations.map((item) => item.feature).sort(), ['next_hour_free', 'travel_time']);
+});
+
+test('mild relaxable transport violation can remain satisfactory', async () => {
+  const preferences = profile([
+    {
+      feature: 'travel_time',
+      type: 'soft',
+      rule: { maxTransitMinutes: 30, preferredTransportModes: ['TRANSIT'] },
+      priority: 'high',
+      importance: 'high',
+      relaxable: true,
+      relaxationDirection: 'longer_travel_time',
+      sourceText: '公交最好30分钟内，远一点也行',
+    },
+  ]);
+  preferences.transportPreference = { maxTransitMinutes: 30, preferredTransportModes: ['TRANSIT'] };
+  const { evaluation } = await evaluateCurrentCandidateSet(state({
+    preferences,
+    candidates: [accessibleCandidate({ id: 'mildly-far', transitMinutes: 35 })],
+  }));
+
+  assert.equal(evaluation.status, EVALUATOR_STATUS.SATISFACTORY);
+  assert.equal(evaluation.softViolations[0].severity, 'mild');
+});
+
+test('missing accessibility fact is not treated as a transport violation', async () => {
+  const preferences = profile([
+    {
+      feature: 'travel_time',
+      type: 'soft',
+      rule: { maxTransitMinutes: 30, preferredTransportModes: ['TRANSIT'] },
+      priority: 'high',
+      importance: 'high',
+      relaxable: true,
+    },
+  ]);
+  preferences.transportPreference = { maxTransitMinutes: 30, preferredTransportModes: ['TRANSIT'] };
+  const { evaluation } = await evaluateCurrentCandidateSet(state({
+    preferences,
+    candidates: [candidate({ id: 'missing-accessibility' })],
+  }));
+
+  assert.equal(evaluation.status, EVALUATOR_STATUS.NEEDS_REPLANNING);
+  assert.equal(evaluation.missingFacts[0].feature, 'travel_time');
+  assert.equal(evaluation.softViolations.some((violation) => violation.feature === 'travel_time'), false);
+});
+
+test('ranker failure fallback still feeds evaluator', async () => {
+  const preferences = profile([
+    {
+      feature: 'travel_time',
+      type: 'soft',
+      rule: { maxTransitMinutes: 30, preferredTransportModes: ['TRANSIT'] },
+      priority: 'high',
+      importance: 'high',
+      relaxable: true,
+    },
+    {
+      feature: 'consecutive_availability',
+      type: 'soft',
+      rule: { preferredMinutes: 120 },
+      priority: 'high',
+      importance: 'high',
+      relaxable: true,
+    },
+  ]);
+  preferences.transportPreference = { maxTransitMinutes: 30, preferredTransportModes: ['TRANSIT'] };
+  const { evaluation, rankerResult } = await evaluateCurrentCandidateSet(state({
+    preferences,
+    candidates: [
+      accessibleCandidate({ id: 'A', transitMinutes: 35 }),
+      accessibleCandidate({ id: 'B', transitMinutes: 24 }),
+    ],
+  }), {
+    rankerProvider: () => {
+      throw new Error('synthetic ranker failure');
+    },
+  });
+
+  assert.equal(rankerResult.rankedCandidates[0].candidateId, 'B');
+  assert.equal(evaluation.status, EVALUATOR_STATUS.SATISFACTORY);
+});
+
+test('replanner action produces a new observation cycle after evaluator requests replanning', async () => {
+  const preferences = profile([
+    {
+      feature: 'next_hour_free',
+      type: 'soft',
+      target: true,
+      priority: 'high',
+      importance: 'high',
+      relaxable: true,
+    },
+  ]);
+  const observations = [];
+  const result = await runReplanningLoop(state({
+    preferences,
+    candidates: [],
+    searchScope: { radiusMeters: 3000 },
+  }), {
+    provider: {
+      async choose({ state: currentState, evaluation }) {
+        if (currentState.iteration === 0) {
+          assert.equal(evaluation.status, EVALUATOR_STATUS.NEEDS_REPLANNING);
+          return {
+            selectedAction: REPLANNING_ACTIONS.EXPAND_RADIUS,
+            targetPreference: null,
+            rationale: 'Current top candidate misses a high-priority soft preference.',
+            expectedEffect: 'A wider radius may produce a stronger top candidate.',
+          };
+        }
+        return {
+          selectedAction: REPLANNING_ACTIONS.SATISFACTORY,
+          targetPreference: null,
+          rationale: 'The second observation has a candidate satisfying the high-priority soft preference.',
+          expectedEffect: 'Stop with the ranked result.',
+        };
+      },
+    },
+    observe: async (currentState) => {
+      observations.push(currentState.searchScope.radiusMeters);
+      if (currentState.iteration === 0) {
+        return { candidates: [candidate({ id: 'initial-weak', nextHourFree: false })] };
+      }
+      return { candidates: [candidate({ id: 'second-good', nextHourFree: true })] };
+    },
+  });
+
+  assert.equal(result.status, 'SATISFACTORY');
+  assert.deepEqual(observations, [3000, 5000]);
+  assert.deepEqual(result.iterations.map((iteration) => iteration.evaluation.status), [
+    EVALUATOR_STATUS.NEEDS_REPLANNING,
+    EVALUATOR_STATUS.SATISFACTORY,
+  ]);
+  assert.equal(result.rankedCandidates[0].candidateId, 'second-good');
 });
 
 test('action enum validation accepts only known actions', () => {
@@ -269,6 +585,71 @@ test('max iteration stops replanning to avoid infinite loops', async () => {
 
   assert.equal(action.selectedAction, REPLANNING_ACTIONS.STOP);
   assert.match(action.rationale, /Maximum replanning iterations/);
+});
+
+test('replanning loop returns MAX_ITERATIONS_REACHED without recording an extra STOP iteration', async () => {
+  const result = await runReplanningLoop(state({
+    candidates: [],
+    iteration: 0,
+  }), {
+    observe: async () => ({ candidates: [] }),
+    maxIterations: 3,
+  });
+
+  assert.equal(result.status, 'MAX_ITERATIONS_REACHED');
+  assert.equal(result.state.status, 'MAX_ITERATIONS_REACHED');
+  assert.equal(result.iterations.length, 3);
+  assert.equal(result.iterations.at(-1).action.selectedAction, REPLANNING_ACTIONS.EXPAND_VENUE_SET);
+});
+
+test('heuristic replanner returns only bounded executor actions for weak soft preferences', async () => {
+  const preferences = profile([
+    {
+      feature: 'price',
+      type: 'soft',
+      direction: 'lower',
+      priority: 'medium',
+      importance: 'medium',
+      relaxable: true,
+    },
+    {
+      feature: 'consecutive_availability',
+      type: 'soft',
+      rule: { preferredMinutes: 120 },
+      priority: 'high',
+      importance: 'high',
+      relaxable: true,
+    },
+  ]);
+  const currentState = state({
+    preferences,
+    candidates: [candidate({ id: 'short', price: null, nextHourFree: false })],
+  });
+  const { evaluation } = await evaluateCurrentCandidateSet(currentState);
+  const action = await chooseReplanningAction(currentState, { evaluation });
+
+  assert.doesNotThrow(() => validateBoundedRealReplanningAction(action));
+  assert.notEqual(action.selectedAction, REPLANNING_ACTIONS.RELAX_PRICE);
+});
+
+test('no-candidate replanner asks user after broad automatic expansions were already tried', async () => {
+  const action = await chooseReplanningAction(state({
+    candidates: [],
+    actionsTaken: [
+      { selectedAction: REPLANNING_ACTIONS.EXPAND_RADIUS },
+      { selectedAction: REPLANNING_ACTIONS.EXPAND_DATE_WINDOW },
+      { selectedAction: REPLANNING_ACTIONS.SEARCH_OTHER_VENUES },
+    ].map((entry, iteration) => ({
+      ...entry,
+      targetPreference: null,
+      parameters: {},
+      rationale: 'Already tried before this scenario.',
+      expectedEffect: 'Do not repeat broad automatic expansion.',
+      iteration,
+    })),
+  }));
+
+  assert.equal(action.selectedAction, REPLANNING_ACTIONS.ASK_USER);
 });
 
 test('unknown provider action is rejected', async () => {
@@ -439,7 +820,6 @@ test('synthetic Maps replanning expands radius switches area then reaches satisf
   assert.deepEqual(proposedActions, [
     REPLANNING_ACTIONS.EXPAND_RADIUS,
     REPLANNING_ACTIONS.SWITCH_SEARCH_AREA,
-    REPLANNING_ACTIONS.SATISFACTORY,
   ]);
   assert.deepEqual(result.iterations.map((iteration) => iteration.candidateCount), [0, 0, 1]);
   assert.deepEqual(observedRadii, [3000, 5000, 3000]);
@@ -625,7 +1005,7 @@ test('both providers exhausted reaches bounded terminal behavior', async () => {
   assert.equal(action.selectedAction, REPLANNING_ACTIONS.STOP);
 });
 
-test('soft transport preference can trigger replanning without hard rejecting farther candidates', async () => {
+test('soft transport preference can remain satisfactory without hard rejecting a mildly farther candidate', async () => {
   const preferences = profile([
     {
       feature: 'travel_time',
@@ -658,9 +1038,10 @@ test('soft transport preference can trigger replanning without hard rejecting fa
   const action = await chooseReplanningAction(currentState, { evaluation });
 
   assert.equal(hardResult.accepted.length, 1);
-  assert.equal(evaluation.weakPreferences[0].feature, 'travel_time');
-  assert.equal(evaluation.weakPreferences[0].relaxable, true);
-  assert.equal(action.selectedAction, REPLANNING_ACTIONS.ASK_USER);
+  assert.equal(evaluation.softViolations[0].feature, 'travel_time');
+  assert.equal(evaluation.softViolations[0].relaxable, true);
+  assert.equal(evaluation.softViolations[0].severity, 'mild');
+  assert.equal(action.selectedAction, REPLANNING_ACTIONS.SATISFACTORY);
 });
 
 test('hard transport constraint rejects before replanner can relax it', () => {

@@ -248,9 +248,10 @@ test('soft maxTransitMinutes does not hard reject candidates over the preferred 
   });
 
   assert.equal(hardResult.accepted.length, 1);
-  assert.equal(evaluation.satisfactory, false);
-  assert.equal(evaluation.weakPreferences[0].feature, 'travel_time');
-  assert.equal(evaluation.weakPreferences[0].relaxable, true);
+  assert.equal(evaluation.satisfactory, true);
+  assert.equal(evaluation.softViolations[0].feature, 'travel_time');
+  assert.equal(evaluation.softViolations[0].relaxable, true);
+  assert.equal(evaluation.softViolations[0].severity, 'mild');
 });
 
 test('maxWalkMinutes uses candidate accessibility walk facts', () => {
@@ -311,6 +312,47 @@ test('calendar free candidate is accepted when no other hard constraint fails', 
 
   assert.equal(result.accepted.length, 1);
   assert.equal(result.rejected.length, 0);
+});
+
+test('hard start_time constraint rejects before ranking', () => {
+  const preferenceProfile = normalizePreferenceProfile({
+    version: 2,
+    preferences: [{ feature: 'price', type: 'soft', importance: 'medium', direction: 'lower' }],
+    hardConstraints: [{
+      feature: 'start_time',
+      type: 'hard',
+      importance: 'high',
+      priority: 'high',
+      rule: { after: '17:00' },
+      sourceText: '17点以前绝对不行',
+    }],
+    objectives: [],
+    unresolvedPreferences: [],
+    sourceText: '17点以前绝对不行，便宜一点',
+    updatedAt: '2026-09-03T00:00:00.000Z',
+  }, {
+    updatedAt: '2026-09-03T00:00:00.000Z',
+  });
+  const cheapInvalid = candidate('cheap-invalid');
+  const valid = candidate('valid');
+  const result = applyHardConstraints({
+    candidates: [
+      {
+        ...cheapInvalid,
+        features: { ...cheapInvalid.features, localTime: '16:00', price: 10 },
+      },
+      {
+        ...valid,
+        features: { ...valid.features, localTime: '18:00', price: 35 },
+      },
+    ],
+    preferenceProfile,
+    defaultCalendarBusyIsHard: false,
+  });
+
+  assert.deepEqual(result.accepted.map((item) => item.id), ['valid']);
+  assert.equal(result.rejected[0].candidate.id, 'cheap-invalid');
+  assert.equal(result.rejected[0].reasons[0].feature, 'start_time');
 });
 
 test('weather hard constraint rejects precipitation', () => {

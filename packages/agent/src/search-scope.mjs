@@ -62,6 +62,44 @@ function includeNonPreferredCourts(state) {
   };
 }
 
+function hardStartTimeRules(state) {
+  return (state.preferences?.hardConstraints ?? [])
+    .filter((constraint) => constraint.feature === 'start_time' && constraint.rule)
+    .map((constraint) => constraint.rule);
+}
+
+function hardBoundedTimeWindow(state) {
+  const rules = hardStartTimeRules(state);
+  if (rules.length === 0) return state.searchScope?.timeWindow ?? {};
+
+  return rules.reduce((window, rule) => {
+    const next = { ...window };
+    if (rule.before) next.before = rule.before;
+    if (rule.after) next.after = rule.after;
+    if (rule.equals) next.equals = rule.equals;
+    if (rule.between) next.between = rule.between;
+    if (rule.exclude) next.exclude = rule.exclude;
+    if (rule.period) next.period = rule.period;
+    return next;
+  }, {});
+}
+
+function shiftTimeWindow(state) {
+  const current = withNormalizedSearchScope(state);
+  const shiftCount = (current.searchScope.temporalShiftCount ?? 0) + 1;
+  const boundedWindow = hardBoundedTimeWindow(current);
+
+  return {
+    ...current,
+    searchScope: {
+      ...current.searchScope,
+      timeWindow: boundedWindow,
+      temporalShiftCount: shiftCount,
+      temporalShiftSemantics: 'within_hard_start_time_bounds',
+    },
+  };
+}
+
 function expandVenueSet(state) {
   const current = withNormalizedSearchScope(state);
   const providerId = nextExpandableProviderId(current.searchScope.providerScope);
@@ -108,6 +146,7 @@ export {
   expandSearchRadius,
   includeNonPreferredCourts,
   normalizeSearchScope,
+  shiftTimeWindow,
   switchSearchArea,
   withNormalizedSearchScope,
 };

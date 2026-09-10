@@ -1,3 +1,8 @@
+import { applyHardConstraints } from '../../core/src/index.mjs';
+import {
+  buildRankerInput,
+  rankCandidates,
+} from '../../ranking/src/index.mjs';
 import { boundedRealReplanningActions, REPLANNING_ACTIONS, validateReplanningAction } from './actions.mjs';
 import { evaluateCandidateSet } from './evaluator.mjs';
 import { chooseReplanningAction } from './policy.mjs';
@@ -5,6 +10,7 @@ import {
   expandSearchRadius,
   expandVenueSet,
   includeNonPreferredCourts,
+  shiftTimeWindow,
   switchSearchArea,
 } from './search-scope.mjs';
 import { validateAgentState } from './state.mjs';
@@ -58,15 +64,22 @@ function validateFactualObservations(factualObservations = {}) {
   return factualObservations;
 }
 
-function evaluateReplanningContext(state, { minCandidates = 1 } = {}) {
+function evaluateReplanningContext(state, {
+  minCandidates = 1,
+  rankerResult = {},
+  factualCandidateFeatures = [],
+} = {}) {
   const validState = validateAgentState(state);
   const factualObservations = validateFactualObservations(validState.factualObservations);
   return evaluateCandidateSet({
     candidates: validState.candidates,
     rejectedCandidates: validState.rejectedCandidates,
     preferences: validState.preferences,
+    rankerResult,
+    factualCandidateFeatures,
     failedConstraints: validState.failedConstraints,
     factualObservations,
+    actionsTaken: validState.actionsTaken,
     minCandidates,
   });
 }
@@ -127,6 +140,15 @@ async function executeReplanningAction(state, action, { savedAreasPath } = {}) {
     });
   }
 
+  if (validatedAction.selectedAction === REPLANNING_ACTIONS.SHIFT_TIME_WINDOW) {
+    const shifted = shiftTimeWindow(currentState);
+    return validateAgentState({
+      ...recordAction(shifted, validatedAction),
+      iteration: currentState.iteration + 1,
+      status: 'READY',
+    });
+  }
+
   if (validatedAction.selectedAction === REPLANNING_ACTIONS.EXPAND_VENUE_SET) {
     const expanded = expandVenueSet(currentState);
     return validateAgentState({
@@ -166,23 +188,104 @@ async function refreshObservedState(state, observe) {
   });
 }
 
+function applyDeterministicHardFilter(state, { defaultCalendarBusyIsHard = false } = {}) {
+  const current = validateAgentState(state);
+  const filtered = applyHardConstraints({
+    candidates: current.candidates,
+    preferenceProfile: current.preferences,
+    defaultCalendarBusyIsHard,
+  });
+
+  return validateAgentState({
+    ...current,
+    candidates: filtered.accepted,
+    rejectedCandidates: [
+      ...current.rejectedCandidates,
+      ...filtered.rejected,
+    ],
+  });
+}
+
+async function evaluateCurrentCandidateSet(state, {
+  minCandidates = 1,
+  rankerProvider = null,
+  rankerTimeoutMs,
+} = {}) {
+  const rankerResult = await rankCandidates({
+    preferenceProfile: state.preferences,
+    candidates: state.candidates,
+    provider: rankerProvider,
+    timeoutMs: rankerTimeoutMs,
+  });
+  const factualCandidateFeatures = buildRankerInput({
+    preferenceProfile: state.preferences,
+    candidates: state.candidates,
+  }).candidates;
+  const evaluation = evaluateReplanningContext(state, {
+    minCandidates,
+    rankerResult,
+    factualCandidateFeatures,
+  });
+
+  return {
+    evaluation,
+    rankerResult,
+    factualCandidateFeatures,
+  };
+}
+
 async function runReplanningLoop(initialState, {
   provider,
   observe,
+  rankerProvider = null,
+  rankerTimeoutMs,
   maxIterations = 3,
   minCandidates = 1,
   savedAreasPath,
+  defaultCalendarBusyIsHard = false,
 } = {}) {
-  let state = await refreshObservedState(validateAgentState(initialState), observe);
+  let state = applyDeterministicHardFilter(
+    await refreshObservedState(validateAgentState(initialState), observe),
+    { defaultCalendarBusyIsHard },
+  );
   const iterations = [];
+  let latestRanking = { rankedCandidates: [] };
 
   while (true) {
-    const evaluation = evaluateReplanningContext(state, { minCandidates });
-    const action = validateBoundedRealReplanningAction(await chooseReplanningAction(state, {
-      provider,
-      maxIterations,
+    if (state.iteration >= maxIterations) {
+      return {
+        status: 'MAX_ITERATIONS_REACHED',
+        state: validateAgentState({
+          ...state,
+          status: 'MAX_ITERATIONS_REACHED',
+        }),
+        iterations,
+        rankedCandidates: latestRanking.rankedCandidates,
+      };
+    }
+
+    const {
       evaluation,
-    }));
+      rankerResult,
+      factualCandidateFeatures,
+    } = await evaluateCurrentCandidateSet(state, {
+      minCandidates,
+      rankerProvider,
+      rankerTimeoutMs,
+    });
+    latestRanking = rankerResult;
+    const action = evaluation.status === 'SATISFACTORY'
+      ? validateBoundedRealReplanningAction({
+        selectedAction: REPLANNING_ACTIONS.SATISFACTORY,
+        targetPreference: null,
+        rationale: 'The current ranked candidate set is satisfactory.',
+        expectedEffect: 'Return the ranked candidates without invoking the replanner.',
+      })
+      : validateBoundedRealReplanningAction(await chooseReplanningAction(state, {
+        provider,
+        maxIterations,
+        evaluation,
+      }));
 
     iterations.push({
       iteration: state.iteration,
@@ -190,6 +293,8 @@ async function runReplanningLoop(initialState, {
       action,
       searchScope: state.searchScope,
       candidateCount: state.candidates.length,
+      rankedCandidates: rankerResult.rankedCandidates,
+      factualCandidateFeatures,
     });
 
     const nextState = await executeReplanningAction(state, action, { savedAreasPath });
@@ -198,10 +303,14 @@ async function runReplanningLoop(initialState, {
         status: nextState.status,
         state: nextState,
         iterations,
+        rankedCandidates: latestRanking.rankedCandidates,
       };
     }
 
-    state = await refreshObservedState(nextState, observe);
+    state = applyDeterministicHardFilter(
+      await refreshObservedState(nextState, observe),
+      { defaultCalendarBusyIsHard },
+    );
   }
 }
 
@@ -209,6 +318,7 @@ export {
   ReplannerError,
   evaluateReplanningContext,
   executeReplanningAction,
+  evaluateCurrentCandidateSet,
   runReplanningLoop,
   validateBoundedRealReplanningAction,
   validateFactualObservations,

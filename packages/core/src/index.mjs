@@ -36,6 +36,7 @@ export {
 export {
   applyHardConstraints,
   evaluateCalendar,
+  evaluateStartTime,
   evaluateTransport,
   evaluateWeather,
 } from './constraints.mjs';

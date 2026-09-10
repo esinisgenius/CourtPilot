@@ -1,0 +1,421 @@
+[
+  {
+    "id": "AB001_initially_satisfactory",
+    "description": "一开始就有高质量候选，不应调用 replanner",
+    "userInput": "明天17点后，便宜一点，公交最好30分钟内，最好连续两小时",
+    "initialState": {
+      "radiusMeters": 3000,
+      "searchWindow": "17:00+"
+    },
+    "observations": [
+      {
+        "iteration": 1,
+        "candidates": [
+          {
+            "id": "good-1",
+            "price": 25,
+            "transitMinutes": 24,
+            "continuousMinutes": 120
+          },
+          {
+            "id": "ok-2",
+            "price": 32,
+            "transitMinutes": 20,
+            "continuousMinutes": 60
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "evaluatorStatus": "SATISFACTORY",
+      "topCandidateId": "good-1",
+      "replannerCalled": false,
+      "iterations": 1
+    }
+  },
+  {
+    "id": "AB002_mild_soft_violation",
+    "description": "轻微可放松 soft violation 仍应接受",
+    "userInput": "公交最好30分钟内，远一点也行，最好连续两小时",
+    "observations": [
+      {
+        "iteration": 1,
+        "candidates": [
+          {
+            "id": "slightly-far",
+            "price": 25,
+            "transitMinutes": 35,
+            "continuousMinutes": 120
+          },
+          {
+            "id": "near-short",
+            "price": 30,
+            "transitMinutes": 25,
+            "continuousMinutes": 60
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "evaluatorStatus": "SATISFACTORY",
+      "topCandidateId": "slightly-far",
+      "softViolations": ["travel_time"],
+      "replannerCalled": false
+    }
+  },
+  {
+    "id": "AB003_missing_two_hour_slots",
+    "description": "当前候选全部只有1小时，应扩大搜索寻找连续两小时",
+    "userInput": "明天17点以后，最好连续两小时，远一点也可以",
+    "initialState": {
+      "radiusMeters": 3000
+    },
+    "observations": [
+      {
+        "iteration": 1,
+        "candidates": [
+          {
+            "id": "short-1",
+            "continuousMinutes": 60,
+            "transitMinutes": 15
+          },
+          {
+            "id": "short-2",
+            "continuousMinutes": 60,
+            "transitMinutes": 22
+          }
+        ]
+      },
+      {
+        "iteration": 2,
+        "afterAction": "EXPAND_RADIUS",
+        "candidates": [
+          {
+            "id": "two-hour",
+            "continuousMinutes": 120,
+            "transitMinutes": 31
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "firstEvaluation": "NEEDS_REPLANNING",
+      "allowedActions": [
+        "EXPAND_RADIUS",
+        "EXPAND_VENUE_SET",
+        "SWITCH_SEARCH_AREA",
+        "ASK_USER"
+      ],
+      "forbiddenActions": [
+        "RELAX_PRICE",
+        "EXPAND_DATE_WINDOW",
+        "SHIFT_TIME_WINDOW",
+        "SEARCH_OTHER_VENUES"
+      ],
+      "hardConstraintsRelaxed": false,
+      "replannerCalled": true
+    }
+  },
+  {
+    "id": "AB004_preferred_court_unavailable",
+    "description": "preferred courts 无空位，但其他 court 有可行候选，应放宽 court preference",
+    "userInput": "Court 4/5/6优先，明天17点后，最好连续两小时",
+    "observations": [
+      {
+        "iteration": 1,
+        "candidates": [],
+        "failedConstraints": ["preferred_courts_unavailable"]
+      },
+      {
+        "iteration": 2,
+        "afterAction": "INCLUDE_NONPREFERRED_COURTS",
+        "candidates": [
+          {
+            "id": "court-2",
+            "court": "Court 2",
+            "continuousMinutes": 120
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "firstEvaluation": "NO_FEASIBLE_CANDIDATES",
+      "expectedAction": "INCLUDE_NONPREFERRED_COURTS",
+      "finalEvaluation": "SATISFACTORY"
+    }
+  },
+  {
+    "id": "AB005_time_window_empty",
+    "description": "当前时间窗全无空位，应调整时间窗或日期，而不是放宽 hard constraint",
+    "userInput": "明天17点以后打球，17点以前不行",
+    "observations": [
+      {
+        "iteration": 1,
+        "candidates": [],
+        "failedConstraints": ["no_availability_in_time_window"]
+      }
+    ],
+    "expected": {
+      "evaluatorStatus": "NO_FEASIBLE_CANDIDATES",
+      "allowedActions": [
+        "SHIFT_TIME_WINDOW",
+        "EXPAND_DATE_WINDOW",
+        "SEARCH_OTHER_VENUES"
+      ],
+      "forbiddenActions": [
+        "RELAX_HARD_START_TIME"
+      ]
+    }
+  },
+  {
+    "id": "AB006_hard_transit_limit",
+    "description": "明确公交不能超过30分钟，不能偷偷接受35分钟候选",
+    "userInput": "公交不能超过30分钟，最好连续两小时",
+    "observations": [
+      {
+        "iteration": 1,
+        "candidates": [
+          {
+            "id": "too-far",
+            "transitMinutes": 35,
+            "continuousMinutes": 120
+          },
+          {
+            "id": "near-short",
+            "transitMinutes": 25,
+            "continuousMinutes": 60
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "hardRejectedCandidateIds": ["too-far"],
+      "topCandidateId": "near-short",
+      "forbiddenRelaxations": ["travel_time"],
+      "hardConstraintRelaxed": false
+    }
+  },
+  {
+    "id": "AB007_accessibility_missing",
+    "description": "accessibility 缺失不能等同于太远",
+    "userInput": "公交最好30分钟内",
+    "observations": [
+      {
+        "iteration": 1,
+        "candidates": [
+          {
+            "id": "unknown-route",
+            "transitMinutes": null,
+            "accessibilityUnavailableReason": "provider_error"
+          },
+          {
+            "id": "known-far",
+            "transitMinutes": 45
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "missingFacts": ["unknown-route:travel_time"],
+      "softViolations": ["known-far:travel_time"],
+      "mustNotTreatMissingAsViolation": true
+    }
+  },
+  {
+    "id": "AB008_price_vs_travel_tradeoff",
+    "description": "排序应体现价格与通勤时间之间的 soft trade-off",
+    "userInput": "便宜优先，公交最好30分钟内，远一点也行",
+    "observations": [
+      {
+        "iteration": 1,
+        "candidates": [
+          {
+            "id": "cheap-far",
+            "price": 20,
+            "transitMinutes": 36
+          },
+          {
+            "id": "expensive-near",
+            "price": 38,
+            "transitMinutes": 22
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "acceptableTopCandidates": ["cheap-far", "expensive-near"],
+      "mustExplainTradeoff": true,
+      "mustNotInventFacts": true,
+      "replannerCalled": false
+    }
+  },
+  {
+    "id": "AB009_ranker_failure_fallback",
+    "description": "LLM ranker 失败时仍应 deterministic fallback",
+    "userInput": "便宜一点，最好连续两小时",
+    "observations": [
+      {
+        "iteration": 1,
+        "candidates": [
+          {
+            "id": "a",
+            "price": 20,
+            "continuousMinutes": 60
+          },
+          {
+            "id": "b",
+            "price": 28,
+            "continuousMinutes": 120
+          }
+        ],
+        "rankerFailure": "timeout"
+      }
+    ],
+    "expected": {
+      "fallbackUsed": true,
+      "rankedCandidateIdsPresent": ["a", "b"],
+      "agentContinues": true,
+      "providerFailureDoesNotAbortLoop": true
+    }
+  },
+  {
+    "id": "AB010_replanning_changes_observation",
+    "description": "replanner action 执行后必须产生新的 observation，而不是原地重复",
+    "userInput": "便宜一点，最好连续两小时，远一点也行",
+    "observations": [
+      {
+        "iteration": 1,
+        "state": {
+          "radiusMeters": 3000
+        },
+        "candidates": [
+          {
+            "id": "short",
+            "continuousMinutes": 60
+          }
+        ]
+      },
+      {
+        "iteration": 2,
+        "afterAction": "EXPAND_RADIUS",
+        "state": {
+          "radiusMeters": 5000
+        },
+        "candidates": [
+          {
+            "id": "long",
+            "continuousMinutes": 120
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "firstEvaluation": "NEEDS_REPLANNING",
+      "stateChanged": true,
+      "observationChanged": true,
+      "finalEvaluation": "SATISFACTORY"
+    }
+  },
+  {
+    "id": "AB011_repeated_failure_stop",
+    "description": "多轮 replanning 仍无满意结果时必须在 maxIterations 停止",
+    "userInput": "明天17点后，必须连续两小时，公交不能超过20分钟",
+    "initialState": {
+      "maxIterations": 3
+    },
+    "observations": [
+      {
+        "iteration": 1,
+        "candidates": []
+      },
+      {
+        "iteration": 2,
+        "candidates": []
+      },
+      {
+        "iteration": 3,
+        "candidates": []
+      }
+    ],
+    "expected": {
+      "finalStatus": "MAX_ITERATIONS_REACHED",
+      "iterations": 3,
+      "mustNotLoopForever": true,
+      "hardConstraintsRelaxed": false
+    }
+  },
+  {
+    "id": "AB012_ask_user_when_ambiguous",
+    "description": "所有合理自动放宽都已尝试且剩余选择涉及用户重大偏好时，应 ASK_USER",
+    "userInput": "明天17点后帮我找个合适的场",
+    "observations": [
+      {
+        "iteration": 1,
+        "candidates": [],
+        "actionsAlreadyTried": [
+          "EXPAND_RADIUS",
+          "EXPAND_DATE_WINDOW",
+          "SEARCH_OTHER_VENUES"
+        ]
+      }
+    ],
+    "expected": {
+      "allowedFinalActions": ["ASK_USER", "STOP"],
+      "mustNotInventNewPreference": true
+    }
+  },
+  {
+    "id": "AB013_soft_preference_not_global_failure",
+    "description": "某个 candidate 违反 soft preference，不代表整个 candidate set 都弱",
+    "userInput": "公交最好30分钟内，最好连续两小时",
+    "observations": [
+      {
+        "iteration": 1,
+        "candidates": [
+          {
+            "id": "bad",
+            "transitMinutes": 45,
+            "continuousMinutes": 60
+          },
+          {
+            "id": "good",
+            "transitMinutes": 25,
+            "continuousMinutes": 120
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "topCandidateId": "good",
+      "evaluatorStatus": "SATISFACTORY",
+      "replannerCalled": false
+    }
+  },
+  {
+    "id": "AB014_hard_filter_before_ranker",
+    "description": "hard-rejected candidate 即使价格极低也不能进入 ranker",
+    "userInput": "17点以前绝对不行，便宜一点",
+    "observations": [
+      {
+        "iteration": 1,
+        "candidates": [
+          {
+            "id": "cheap-invalid",
+            "startTime": "16:00",
+            "price": 10
+          },
+          {
+            "id": "valid",
+            "startTime": "18:00",
+            "price": 35
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "hardRejectedCandidateIds": ["cheap-invalid"],
+      "rankerInputCandidateIds": ["valid"],
+      "topCandidateId": "valid"
+    }
+  }
+]

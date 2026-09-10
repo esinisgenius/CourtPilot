@@ -1,4 +1,5 @@
 import { evaluateTransportThresholds } from './transport-preferences.mjs';
+import { matchesStartTimeRule } from './features.mjs';
 
 function hardConstraints(profile) {
   return profile?.hardConstraints ?? [];
@@ -124,6 +125,41 @@ function evaluateTransport(candidate, preferenceProfile) {
   };
 }
 
+function startTimeConstraints(profile) {
+  return hardConstraints(profile).filter((constraint) => constraint.feature === 'start_time');
+}
+
+function evaluateStartTime(candidate, preferenceProfile) {
+  const constraints = startTimeConstraints(preferenceProfile);
+  const failures = [];
+
+  for (const constraint of constraints) {
+    const localTime = candidate.features?.localTime;
+    if (typeof localTime !== 'string') {
+      failures.push({
+        feature: 'start_time',
+        reason: 'start_time_unknown',
+      });
+      continue;
+    }
+
+    const matches = matchesStartTimeRule(localTime, constraint.rule ?? {});
+    if (matches === false) {
+      failures.push({
+        feature: 'start_time',
+        reason: 'start_time_outside_hard_window',
+        localTime,
+        rule: constraint.rule ?? {},
+      });
+    }
+  }
+
+  return {
+    accepted: failures.length === 0,
+    failures,
+  };
+}
+
 function applyHardConstraints({
   candidates,
   preferenceProfile,
@@ -139,6 +175,7 @@ function applyHardConstraints({
       ...evaluateCalendar(candidate, preferenceProfile, { defaultCalendarBusyIsHard }).failures,
       ...evaluateWeather(candidate, preferenceProfile).failures,
       ...evaluateTransport(candidate, preferenceProfile).failures,
+      ...evaluateStartTime(candidate, preferenceProfile).failures,
     ];
 
     if (reasons.length === 0) {
@@ -154,6 +191,7 @@ function applyHardConstraints({
 export {
   applyHardConstraints,
   evaluateCalendar,
+  evaluateStartTime,
   evaluateTransport,
   evaluateWeather,
 };

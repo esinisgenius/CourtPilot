@@ -7,6 +7,7 @@ export {
 } from './actions.mjs';
 
 export {
+  EVALUATOR_STATUS,
   evaluateCandidateSet,
   preferenceMatchesCandidate,
 } from './evaluator.mjs';
@@ -28,6 +29,7 @@ export {
   expandSearchRadius,
   includeNonPreferredCourts,
   normalizeSearchScope,
+  shiftTimeWindow,
   switchSearchArea,
   withNormalizedSearchScope,
 } from './search-scope.mjs';
@@ -48,6 +50,7 @@ export {
 
 export {
   ReplannerError,
+  evaluateCurrentCandidateSet,
   evaluateReplanningContext,
   executeReplanningAction,
   runReplanningLoop,

@@ -4,12 +4,80 @@ import { canExpandProviderScope } from './provider-scope.mjs';
 import { validateAgentState } from './state.mjs';
 
 function actionForWeakPreference(preference) {
-  if (preference?.feature === 'price') return REPLANNING_ACTIONS.RELAX_PRICE;
-  if (preference?.feature === 'start_time') return REPLANNING_ACTIONS.SHIFT_TIME_WINDOW;
+  if (preference?.feature === 'price') return REPLANNING_ACTIONS.EXPAND_RADIUS;
+  if (preference?.feature === 'start_time') return REPLANNING_ACTIONS.ASK_USER;
   if (preference?.feature === 'court') return REPLANNING_ACTIONS.INCLUDE_NONPREFERRED_COURTS;
-  if (preference?.feature === 'venue') return REPLANNING_ACTIONS.SEARCH_OTHER_VENUES;
+  if (preference?.feature === 'venue') return REPLANNING_ACTIONS.EXPAND_VENUE_SET;
   if (preference?.feature === 'travel_time') return REPLANNING_ACTIONS.ASK_USER;
+  if (preference?.feature === 'consecutive_availability') return REPLANNING_ACTIONS.EXPAND_RADIUS;
+  if (preference?.feature === 'duration') return REPLANNING_ACTIONS.EXPAND_RADIUS;
+  if (preference?.feature === 'next_hour_free') return REPLANNING_ACTIONS.EXPAND_RADIUS;
   return REPLANNING_ACTIONS.ASK_USER;
+}
+
+function actionWasTried(state, action) {
+  return (state.actionsTaken ?? []).some((entry) => entry.selectedAction === action);
+}
+
+function broadNoCandidateSearchAlreadyTried(state) {
+  const triedRadius = actionWasTried(state, REPLANNING_ACTIONS.EXPAND_RADIUS);
+  const triedDate = actionWasTried(state, REPLANNING_ACTIONS.EXPAND_DATE_WINDOW);
+  const triedOtherVenues = actionWasTried(state, REPLANNING_ACTIONS.SEARCH_OTHER_VENUES)
+    || actionWasTried(state, REPLANNING_ACTIONS.EXPAND_VENUE_SET);
+  return triedRadius && triedDate && triedOtherVenues;
+}
+
+function failedConstraintCodes(evaluation = {}) {
+  return new Set((evaluation.failedConstraints ?? []).map((failure) => {
+    if (typeof failure === 'string') return failure;
+    return failure.code ?? failure.reason ?? failure.feature ?? null;
+  }).filter(Boolean));
+}
+
+function relaxableSoftPreference(state, feature) {
+  return (state.preferences?.preferences ?? [])
+    .some((preference) => preference.feature === feature && preference.relaxable !== false);
+}
+
+function canIncludeNonPreferredCourts(state) {
+  return relaxableSoftPreference(state, 'court')
+    && state.searchScope?.courtScope?.includeNonPreferred !== true;
+}
+
+function diagnoseFailureModes(state, evaluation) {
+  const codes = failedConstraintCodes(evaluation);
+  const modes = [];
+
+  if (codes.has('preferred_courts_unavailable') && canIncludeNonPreferredCourts(state)) {
+    modes.push({
+      code: 'PREFERRED_COURTS_UNAVAILABLE',
+      action: REPLANNING_ACTIONS.INCLUDE_NONPREFERRED_COURTS,
+      targetPreference: 'court',
+      rationale: 'The observed failure is specific to preferred courts, and the court preference is soft and relaxable.',
+      expectedEffect: 'Include non-preferred courts while preserving hard constraints.',
+    });
+  }
+
+  if (codes.has('no_availability_in_time_window')) {
+    modes.push({
+      code: 'NO_AVAILABILITY_IN_TIME_WINDOW',
+      action: REPLANNING_ACTIONS.SHIFT_TIME_WINDOW,
+      targetPreference: 'start_time',
+      rationale: 'The observed failure is specific to the searched time window.',
+      expectedEffect: 'Move or expand the searched interval only inside hard start-time bounds; never cross a hard temporal boundary.',
+    });
+  }
+
+  return modes;
+}
+
+function actionForFailureMode(mode) {
+  return {
+    selectedAction: mode.action,
+    targetPreference: mode.targetPreference,
+    rationale: mode.rationale,
+    expectedEffect: mode.expectedEffect,
+  };
 }
 
 function heuristicReplanningAction(state, evaluation) {
@@ -23,6 +91,18 @@ function heuristicReplanningAction(state, evaluation) {
   }
 
   if (state.candidates.length === 0) {
+    const [diagnosedMode] = diagnoseFailureModes(state, evaluation);
+    if (diagnosedMode) return actionForFailureMode(diagnosedMode);
+
+    if (broadNoCandidateSearchAlreadyTried(state)) {
+      return {
+        selectedAction: REPLANNING_ACTIONS.ASK_USER,
+        targetPreference: null,
+        rationale: 'The broad automatic no-candidate search expansions have already been attempted.',
+        expectedEffect: 'Ask the user which major trade-off they are willing to make next.',
+      };
+    }
+
     if (state.searchScope?.providerScope && canExpandProviderScope(state.searchScope.providerScope)) {
       return {
         selectedAction: REPLANNING_ACTIONS.EXPAND_VENUE_SET,
