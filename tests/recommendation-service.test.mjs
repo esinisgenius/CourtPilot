@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildPreferredTemporalPolicy,
+  classifyTemporalSpecificity,
   diversifyRankedCandidates,
+  inferPersonalizedTemporalPolicy,
   locationProviderRouting,
   providerOptionsForState,
   searchScopeForProfile,
@@ -46,6 +49,185 @@ test('explicit Burwood location routes initial provider scope to configured Burw
   assert.equal(routedScope.targetLocation.text, 'burwood附近');
   assert.equal(routedScope.targetLocation.canonicalName, 'Burwood');
   assert.deepEqual(routedScope.targetLocation.center, { lat: -33.8775, lng: 151.1035 });
+});
+
+test('temporal specificity treats narrow canonical windows as explicit', () => {
+  const result = classifyTemporalSpecificity({
+    searchScope: {
+      temporalWindow: { timeStart: '17:00', timeEnd: '19:00' },
+    },
+  });
+
+  assert.equal(result.modeCandidate, 'explicit');
+});
+
+test('temporal specificity treats open-ended time constraints as broad', () => {
+  const result = classifyTemporalSpecificity({
+    searchScope: {
+      temporalWindow: { timeStart: '10:00', timeEnd: null },
+      timeWindow: { after: '10:00' },
+    },
+  });
+
+  assert.equal(result.modeCandidate, 'broad');
+});
+
+test('first-time temporal policy uses cold start for broad requests', async () => {
+  const policy = await buildPreferredTemporalPolicy({
+    requestPreferences: {
+      sourceText: 'anytime tomorrow',
+      updatedAt: '2026-09-16T00:00:00.000Z',
+      searchScope: {
+        temporalWindow: { dateStart: '2026-09-17', dateEnd: '2026-09-17', timeStart: null, timeEnd: null },
+      },
+      preferences: [],
+      objectives: [],
+      hardConstraints: [],
+    },
+    userProfile: null,
+    recentBehavior: {},
+  });
+
+  assert.equal(policy.mode, 'cold_start');
+});
+
+test('personalized temporal policy uses persistent user profile time evidence', async () => {
+  const policy = await buildPreferredTemporalPolicy({
+    requestPreferences: {
+      sourceText: 'anytime tomorrow',
+      updatedAt: '2026-09-16T00:00:00.000Z',
+      searchScope: {
+        temporalWindow: { dateStart: '2026-09-17', dateEnd: '2026-09-17', timeStart: null, timeEnd: null },
+      },
+      preferences: [],
+      objectives: [],
+      hardConstraints: [],
+    },
+    userProfile: {
+      preferredTimeWindows: [{ start: '17:00', end: '20:00' }],
+      preferences: [{
+        feature: 'start_time',
+        type: 'soft',
+        importance: 'high',
+        priority: 'high',
+        rule: { period: 'evening' },
+        sourceText: 'preferred time window',
+        persistence: 'persistent',
+      }],
+      objectives: [],
+      hardConstraints: [],
+    },
+  });
+
+  assert.equal(policy.mode, 'personalized');
+  assert.equal(policy.confidence, 'medium');
+  assert.deepEqual(policy.preferredWindows[0], { start: '17:00', end: '20:00', priority: 1 });
+  assert.ok(policy.evidenceUsed.some((item) => item.startsWith('userProfile_')));
+});
+
+test('personalized temporal policy preserves before-or-after user profile windows', async () => {
+  const policy = await buildPreferredTemporalPolicy({
+    requestPreferences: {
+      sourceText: '13点前或者17点以后都行',
+      updatedAt: '2026-09-16T00:00:00.000Z',
+      searchScope: {
+        temporalWindow: { timeStart: null, timeEnd: null },
+      },
+      preferences: [],
+      objectives: [],
+      hardConstraints: [],
+    },
+    userProfile: {
+      preferences: [{
+        feature: 'start_time',
+        type: 'soft',
+        importance: 'medium',
+        priority: 'medium',
+        rule: { before: '13:00', after: '17:00' },
+      }],
+      objectives: [],
+      hardConstraints: [],
+    },
+  });
+
+  assert.equal(policy.mode, 'personalized');
+  assert.deepEqual(policy.preferredWindows.slice(0, 2), [
+    { start: '00:00', end: '13:00', priority: 1 },
+    { start: '17:00', end: '23:59', priority: 2 },
+  ]);
+});
+
+test('low-confidence temporal personalization falls back to cold start', async () => {
+  const policy = await buildPreferredTemporalPolicy({
+    requestPreferences: {
+      sourceText: 'anytime tomorrow',
+      searchScope: { temporalWindow: { timeStart: null, timeEnd: null } },
+      preferences: [],
+      objectives: [],
+      hardConstraints: [],
+    },
+    userProfile: {
+      preferences: [{
+        feature: 'start_time',
+        type: 'soft',
+        importance: 'low',
+        priority: 'low',
+        rule: { period: 'morning' },
+      }],
+      objectives: [],
+      hardConstraints: [],
+    },
+  });
+
+  assert.equal(policy.mode, 'cold_start');
+  assert.deepEqual(policy.preferredWindows[0], { start: '10:00', end: '12:00', priority: 1 });
+});
+
+test('booking behavior summary can produce high-confidence personalized temporal policy', () => {
+  const policy = inferPersonalizedTemporalPolicy({
+    userProfile: null,
+    recentBehavior: {
+      bookingClickCount: 5,
+      timeBuckets: { morning: 1, daytime: 0, evening: 4 },
+      dominantTimeBucket: 'evening',
+      confidence: 'high',
+    },
+  });
+
+  assert.equal(policy.mode, 'personalized');
+  assert.equal(policy.confidence, 'high');
+  assert.deepEqual(policy.preferredWindows[0], { start: '17:00', end: '20:00', priority: 1 });
+  assert.ok(policy.evidenceUsed.some((item) => item.startsWith('booking_behavior_')));
+});
+
+test('explicit current query overrides stored temporal personalization', async () => {
+  const policy = await buildPreferredTemporalPolicy({
+    requestPreferences: {
+      sourceText: 'tomorrow 10:00-11:00',
+      searchScope: {
+        temporalWindow: {
+          dateStart: '2026-09-17',
+          dateEnd: '2026-09-17',
+          timeStart: '10:00',
+          timeEnd: '11:00',
+        },
+      },
+      preferences: [],
+      objectives: [],
+      hardConstraints: [],
+    },
+    userProfile: {
+      preferredTimeWindows: [{ start: '17:00', end: '20:00' }],
+    },
+    recentBehavior: {
+      bookingClickCount: 5,
+      timeBuckets: { morning: 0, daytime: 0, evening: 5 },
+      dominantTimeBucket: 'evening',
+    },
+  });
+
+  assert.equal(policy.mode, 'explicit');
+  assert.deepEqual(policy.preferredWindows[0], { start: '10:00', end: '11:00', priority: 1 });
 });
 
 test('missing location uses Sydney-wide routing without defaulting provider order to SUSF', () => {

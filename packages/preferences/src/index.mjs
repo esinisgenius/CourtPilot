@@ -45,10 +45,25 @@ export {
   PreferenceBrowserStoreError,
   clearProfile,
   createDefaultPreferenceProfile,
+  loadUserProfileFields,
   loadProfile,
   mergeProfiles,
   persistentFieldsFromProfile,
   profileFromPersistentFields,
+  saveUserProfileFields,
   saveProfile,
   updateProfile,
 } from './browser-store.mjs';
+
+export {
+  LOCAL_BEHAVIOR_STORAGE_KEY,
+  LOCAL_BEHAVIOR_STORAGE_VERSION,
+  MAX_HISTORY_ITEMS,
+  clearBehaviorHistory,
+  loadBehaviorHistory,
+  recordBookingClick,
+  recordSearch,
+  recordSelection,
+  saveBehaviorHistory,
+  summarizeBehavior,
+} from './behavior-store.mjs';

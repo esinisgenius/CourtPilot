@@ -78,6 +78,8 @@ async function handleRecommend(request, response) {
     totalBudgetMs: body.totalBudgetMs,
     providerTimeoutMs: body.providerTimeoutMs,
     susfProviderTimeoutMs: body.susfProviderTimeoutMs,
+    userProfile: body.userProfile,
+    recentBehavior: body.recentBehavior,
     signal: controller.signal,
   });
   if (!response.writableEnded) sendJson(response, result.ok ? 200 : 502, result);

@@ -11,6 +11,10 @@ const filterList = document.querySelector('#filter-list');
 const cards = document.querySelector('#cards');
 const nearbyCards = document.querySelector('#nearby-cards');
 const emptyState = document.querySelector('#empty-state');
+const profileStorageKey = 'findmycourt.profile.v1';
+const behaviorStorageKey = 'findmycourt.behavior.v1';
+const behaviorStorageVersion = 1;
+const maxBehaviorItems = 20;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -19,6 +23,191 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
+}
+
+function safeJsonParse(raw) {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function safeStorage() {
+  try {
+    const storage = window.localStorage;
+    const probe = 'findmycourt.storage.probe';
+    storage.setItem(probe, '1');
+    storage.removeItem(probe);
+    return storage;
+  } catch {
+    return null;
+  }
+}
+
+function ruleToWindows(rule = {}) {
+  if (rule.start && rule.end) return [{ start: rule.start, end: rule.end }];
+  if (rule.before && rule.after) return [
+    { start: '00:00', end: rule.before },
+    { start: rule.after, end: '23:59' },
+  ];
+  if (rule.before) return [{ start: '00:00', end: rule.before }];
+  if (rule.after) return [{ start: rule.after, end: '23:59' }];
+  if (rule.period === 'morning') return [{ start: '08:00', end: '12:00' }];
+  if (rule.period === 'afternoon') return [{ start: '12:00', end: '18:00' }];
+  if (rule.period === 'evening') return [{ start: '17:00', end: '20:00' }];
+  if (rule.period === 'night') return [{ start: '18:00', end: '22:00' }];
+  return [];
+}
+
+function valuesFromRuleItems(profile, feature, key = 'include') {
+  return [...new Set([...(profile?.preferences ?? []), ...(profile?.hardConstraints ?? [])]
+    .filter((item) => item.feature === feature)
+    .flatMap((item) => item.rule?.[key] ?? item.rule?.values ?? []))];
+}
+
+function loadUserProfile() {
+  const storage = safeStorage();
+  if (!storage) return null;
+  const envelope = safeJsonParse(storage.getItem(profileStorageKey));
+  if (envelope?.userProfile) return envelope.userProfile;
+  const profile = envelope?.profile ?? null;
+  if (!profile || typeof profile !== 'object') return null;
+  const preferredTimeWindows = [...(profile.preferences ?? []), ...(profile.hardConstraints ?? [])]
+    .filter((item) => item.feature === 'start_time' && item.rule)
+    .flatMap((item) => ruleToWindows(item.rule));
+  const duration = [...(profile.preferences ?? []), ...(profile.hardConstraints ?? [])]
+    .find((item) => item.feature === 'duration' && item.rule)?.rule;
+  const userProfile = {
+    preferredDays: profile.preferredDays ?? [],
+    preferredTimeWindows,
+    typicalDurationMinutes: duration?.exactMinutes ?? duration?.preferredMinutes ?? duration?.minMinutes ?? null,
+    maxTravelMinutes: profile.transportPreference?.maxTransitMinutes
+      ?? profile.transportPreference?.maxWalkMinutes
+      ?? null,
+    preferredVenues: valuesFromRuleItems(profile, 'venue'),
+  };
+  return Object.values(userProfile).some((value) => Array.isArray(value) ? value.length > 0 : value !== null)
+    ? userProfile
+    : null;
+}
+
+function emptyBehaviorHistory() {
+  return {
+    recentSearches: [],
+    recentSelections: [],
+    recentBookingClicks: [],
+  };
+}
+
+function boundedNewest(items = []) {
+  return [...items]
+    .filter((item) => item && typeof item === 'object' && !Array.isArray(item))
+    .sort((left, right) => Date.parse(right.timestamp ?? 0) - Date.parse(left.timestamp ?? 0))
+    .slice(0, maxBehaviorItems);
+}
+
+function normalizeBehaviorHistory(behavior = {}) {
+  return {
+    recentSearches: boundedNewest(behavior.recentSearches),
+    recentSelections: boundedNewest(behavior.recentSelections),
+    recentBookingClicks: boundedNewest(behavior.recentBookingClicks),
+  };
+}
+
+function loadBehaviorHistory() {
+  const storage = safeStorage();
+  if (!storage) return emptyBehaviorHistory();
+  const envelope = safeJsonParse(storage.getItem(behaviorStorageKey));
+  if (envelope?.storageVersion !== behaviorStorageVersion) return emptyBehaviorHistory();
+  return normalizeBehaviorHistory(envelope.behavior);
+}
+
+function saveBehaviorHistory(behavior) {
+  const storage = safeStorage();
+  const normalized = normalizeBehaviorHistory(behavior);
+  if (storage) {
+    storage.setItem(behaviorStorageKey, JSON.stringify({
+      storageVersion: behaviorStorageVersion,
+      behavior: normalized,
+    }));
+  }
+  return normalized;
+}
+
+function appendBehavior(listName, item) {
+  const current = loadBehaviorHistory();
+  return saveBehaviorHistory({
+    ...current,
+    [listName]: [
+      { timestamp: new Date().toISOString(), ...item },
+      ...(current[listName] ?? []),
+    ],
+  });
+}
+
+function clearBehaviorHistory() {
+  const storage = safeStorage();
+  if (storage) storage.removeItem(behaviorStorageKey);
+}
+
+function localTimeFromStartTime(startTime) {
+  return /T(\d{2}:\d{2})/.exec(String(startTime ?? ''))?.[1] ?? null;
+}
+
+function timeBucket(localTime) {
+  const match = /^(\d{2}):(\d{2})$/.exec(String(localTime ?? ''));
+  if (!match) return null;
+  const minutes = Number(match[1]) * 60 + Number(match[2]);
+  if (minutes < 12 * 60) return 'morning';
+  if (minutes < 17 * 60) return 'daytime';
+  return 'evening';
+}
+
+function summarizeBehaviorHistory() {
+  const history = loadBehaviorHistory();
+  const rows = [...history.recentBookingClicks, ...history.recentSelections]
+    .map((item) => ({
+      startTime: item.startTime ?? null,
+      localTime: item.localTime ?? localTimeFromStartTime(item.startTime),
+      venue: item.venue ?? null,
+      court: item.court ?? null,
+    }))
+    .filter((item) => item.localTime);
+  const timeBuckets = { morning: 0, daytime: 0, evening: 0 };
+  for (const row of rows) {
+    const bucket = timeBucket(row.localTime);
+    if (bucket) timeBuckets[bucket] += 1;
+  }
+  const dominant = Object.entries(timeBuckets)
+    .sort((left, right) => right[1] - left[1])
+    .find(([, count]) => count > 0);
+  const dominantTimeBucket = dominant?.[0] ?? null;
+  const dominantCount = dominant?.[1] ?? 0;
+  return {
+    bookingClickCount: history.recentBookingClicks.length,
+    selectionCount: history.recentSelections.length,
+    searchCount: history.recentSearches.length,
+    timeBuckets,
+    recentStartTimes: rows.slice(0, 10).map((item) => item.localTime),
+    dominantTimeBucket,
+    confidence: dominantCount >= 3 && dominantCount / Math.max(rows.length, 1) >= 0.6
+      ? 'high'
+      : dominantCount >= 2 ? 'medium' : 'low',
+    recentBookingClicks: history.recentBookingClicks.slice(0, 10).map((item) => ({
+      startTime: item.startTime,
+      localTime: localTimeFromStartTime(item.startTime),
+      venue: item.venue,
+      court: item.court,
+    })),
+    recentSelections: history.recentSelections.slice(0, 10).map((item) => ({
+      startTime: item.startTime,
+      localTime: localTimeFromStartTime(item.startTime),
+      venue: item.venue,
+      court: item.court,
+    })),
+  };
 }
 
 function currentRequestText() {
@@ -175,10 +364,27 @@ function bookingCapabilityLabel(capability) {
   return 'Book';
 }
 
-function renderBookingAction(booking) {
+function bookingProvider(booking) {
+  if (!booking?.url) return null;
+  try {
+    return new URL(booking.url).hostname;
+  } catch {
+    return null;
+  }
+}
+
+function renderBookingAction(booking, candidate = null) {
   if (!booking?.url) return '';
+  const behaviorAttrs = candidate ? [
+    `data-behavior="booking-click"`,
+    `data-venue="${escapeHtml(candidate.venue)}"`,
+    `data-court="${escapeHtml(candidate.court)}"`,
+    `data-start-time="${escapeHtml(candidate.startTime)}"`,
+    `data-duration-minutes="${escapeHtml(candidate.durationMinutes)}"`,
+    `data-booking-provider="${escapeHtml(bookingProvider(booking) ?? '')}"`,
+  ].join(' ') : '';
   return `
-    <a class="book-link" href="${escapeHtml(booking.url)}" target="_blank" rel="noopener noreferrer">
+    <a class="book-link" href="${escapeHtml(booking.url)}" target="_blank" rel="noopener noreferrer" ${behaviorAttrs}>
       Book this court
       <span>${escapeHtml(bookingCapabilityLabel(booking.capability))}</span>
     </a>
@@ -201,7 +407,7 @@ function renderCandidates(response) {
           <span>${escapeHtml(formatCalendar(candidate.calendar))}</span>
         </div>
         <p class="reasons">${escapeHtml([...(candidate.reasons ?? []), ...(candidate.tradeoffs ?? [])].join(' '))}</p>
-        ${renderBookingAction(candidate.booking)}
+        ${renderBookingAction(candidate.booking, candidate)}
       </div>
       <div class="score">
         <strong>${escapeHtml(candidate.rank)}</strong>
@@ -243,10 +449,16 @@ function renderNearbyCourts(response) {
 }
 
 async function fetchRecommendation(text) {
+  const userProfile = loadUserProfile();
+  const recentBehavior = summarizeBehaviorHistory();
   const response = await fetch('/api/recommend', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ request: text }),
+    body: JSON.stringify({
+      request: text,
+      userProfile,
+      recentBehavior,
+    }),
   });
   const payload = await response.json();
   if (!response.ok && !payload) throw new Error(`Request failed with HTTP ${response.status}`);
@@ -269,6 +481,13 @@ async function submitRequest() {
 
   try {
     const response = await fetchRecommendation(text);
+    appendBehavior('recentSearches', {
+      rawRequest: text,
+      resolvedLocation: response.searchScope?.targetLocation?.canonicalName
+        ?? response.searchScope?.targetLocation?.text
+        ?? null,
+      allowedTimeWindow: response.searchScope?.temporalWindow ?? null,
+    });
     renderProfile(response.preferenceProfile);
     renderSummary(response);
     renderRunState(response);
@@ -314,5 +533,25 @@ sampleButton.addEventListener('click', () => {
   syncButtonState();
   submitRequest();
 });
+
+cards.addEventListener('click', (event) => {
+  const link = event.target.closest('[data-behavior="booking-click"]');
+  if (!link) return;
+  appendBehavior('recentBookingClicks', {
+    venueId: link.dataset.venueId || null,
+    venue: link.dataset.venue || null,
+    court: link.dataset.court || null,
+    startTime: link.dataset.startTime || null,
+    durationMinutes: Number(link.dataset.durationMinutes) || null,
+    bookingProvider: link.dataset.bookingProvider || null,
+  });
+});
+
+window.CourtPilotStorage = {
+  clearBehaviorHistory,
+  loadBehaviorHistory,
+  loadUserProfile,
+  summarizeBehaviorHistory,
+};
 
 syncButtonState();

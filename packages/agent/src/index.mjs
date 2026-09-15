@@ -63,6 +63,15 @@ export {
 } from './recommendation-service.mjs';
 
 export {
+  buildPreferredTemporalPolicy,
+  classifyTemporalSpecificity,
+  coldStartTemporalPolicy,
+  inferPersonalizedTemporalPolicy,
+  meaningfulTemporalEvidence,
+  validateTemporalPolicy,
+} from './temporal-policy.mjs';
+
+export {
   canonicalVenueInventory,
   configuredRealtimeVenues,
   venueInventorySummary,

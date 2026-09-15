@@ -80,7 +80,15 @@ function softPreferenceSignals(preferenceProfile = {}) {
     });
   }
 
-  if (!hasExplicitTimeSignal(preferenceProfile)) {
+  if (preferenceProfile.preferredTemporalPolicy?.preferredWindows?.length > 0) {
+    signals.push({
+      feature: 'preferred_temporal_policy',
+      priority: preferenceProfile.preferredTemporalPolicy.mode === 'explicit' ? 'high' : 'low',
+      direction: 'lower',
+      rule: preferenceProfile.preferredTemporalPolicy,
+      relaxable: true,
+    });
+  } else if (!hasExplicitTimeSignal(preferenceProfile)) {
     signals.push({
       feature: 'default_time_utility',
       priority: 'low',
@@ -190,6 +198,24 @@ function defaultTimePenalty(snapshot) {
   return 2;
 }
 
+function temporalPolicyPenalty(snapshot, policy = {}) {
+  const minutes = minutesFromLocalTime(snapshot.slot.localTime);
+  if (minutes === null) return 10000;
+  const windows = Array.isArray(policy.preferredWindows) ? policy.preferredWindows : [];
+  if (windows.length === 0) return defaultTimePenalty(snapshot);
+
+  let best = 10000;
+  for (const window of windows) {
+    const start = minutesFromLocalTime(window.start);
+    const end = minutesFromLocalTime(window.end);
+    if (start === null || end === null || end <= start) continue;
+    const priority = Number.isInteger(window.priority) ? window.priority : 3;
+    const distance = minutes < start ? start - minutes : minutes >= end ? minutes - end + 1 : 0;
+    best = Math.min(best, priority * 100 + distance);
+  }
+  return best;
+}
+
 function compareSignal(a, b, signal, preferenceProfile) {
   if (signal.feature === 'price') {
     const direction = signal.direction === 'higher' || signal.direction === 'maximize' ? 'higher' : 'lower';
@@ -202,6 +228,14 @@ function compareSignal(a, b, signal, preferenceProfile) {
 
   if (signal.feature === 'default_time_utility') {
     return compareNullableNumbers(defaultTimePenalty(a), defaultTimePenalty(b), 'lower');
+  }
+
+  if (signal.feature === 'preferred_temporal_policy') {
+    return compareNullableNumbers(
+      temporalPolicyPenalty(a, signal.rule),
+      temporalPolicyPenalty(b, signal.rule),
+      'lower',
+    );
   }
 
   if (signal.feature === 'travel_time') {
@@ -335,6 +369,9 @@ function reasonsForSnapshot(snapshot, signals, preferenceProfile) {
   if (signals.some((signal) => signal.feature === 'travel_time')) reasons.push(reasonForTransport(snapshot, preferenceProfile));
   if (signals.some((signal) => ['consecutive_availability', 'duration', 'next_hour_free'].includes(signal.feature))) {
     reasons.push(reasonForContinuous(snapshot));
+  }
+  if (signals.some((signal) => signal.feature === 'preferred_temporal_policy')) {
+    reasons.push(`Time recommendation policy is ${preferenceProfile.preferredTemporalPolicy?.mode ?? 'unknown'}.`);
   }
   if (reasons.length === 0) reasons.push('Ranked by stable candidate order because no supported soft preference facts were available.');
   return reasons;

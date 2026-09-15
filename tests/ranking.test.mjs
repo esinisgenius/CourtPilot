@@ -303,6 +303,53 @@ test('fallback ranking lowers early-morning priority when no explicit time is gi
   assert.deepEqual(result.rankedCandidates.map((item) => item.candidateId), ['midday', 'early']);
 });
 
+test('fallback ranking uses preferred temporal policy as a ranking signal', () => {
+  const result = fallbackRankCandidates({
+    preferenceProfile: {
+      ...softTradeoffProfile(),
+      preferences: [],
+      objectives: [],
+      transportPreference: {},
+      preferredTemporalPolicy: {
+        mode: 'personalized',
+        preferredWindows: [{ start: '17:00', end: '20:00', priority: 1 }],
+        confidence: 'medium',
+        evidenceUsed: ['profile_evening_preference'],
+      },
+    },
+    candidates: [
+      candidate({ id: 'morning', startTime: '2026-09-16T10:00:00+10:00' }),
+      candidate({ id: 'evening', startTime: '2026-09-16T18:00:00+10:00' }),
+    ],
+  });
+
+  assert.deepEqual(result.rankedCandidates.map((item) => item.candidateId), ['evening', 'morning']);
+  assert.match(result.rankedCandidates[0].reasons.join(' '), /Time recommendation policy is personalized/);
+});
+
+test('fallback ranking uses cold-start temporal policy instead of implicit default rule', () => {
+  const result = fallbackRankCandidates({
+    preferenceProfile: {
+      ...softTradeoffProfile(),
+      preferences: [],
+      objectives: [],
+      transportPreference: {},
+      preferredTemporalPolicy: {
+        mode: 'cold_start',
+        preferredWindows: [{ start: '17:00', end: '20:00', priority: 1 }],
+        confidence: 'medium',
+        evidenceUsed: ['cold_start_default'],
+      },
+    },
+    candidates: [
+      candidate({ id: 'ten', startTime: '2026-09-16T10:00:00+10:00' }),
+      candidate({ id: 'six', startTime: '2026-09-16T18:00:00+10:00' }),
+    ],
+  });
+
+  assert.deepEqual(result.rankedCandidates.map((item) => item.candidateId), ['six', 'ten']);
+});
+
 test('fallback ranking preserves explicit time preference over default time utility', () => {
   const result = fallbackRankCandidates({
     preferenceProfile: {

@@ -6,18 +6,25 @@ import { join } from 'node:path';
 import {
   PREFERENCE_VERSION,
   PreferenceInterpreterError,
+  clearBehaviorHistory,
   clearProfile,
   assertOpenAiStrictObjectSchema,
   buildInterpreterMessages,
   collectObjectSchemas,
   interpretPreferences,
+  loadBehaviorHistory,
   loadProfile,
   loadPreferenceProfile,
+  loadUserProfileFields,
   mergeProfiles,
   normalizePreferenceProfile,
   openAiPreferenceProfileJsonSchema,
   profileFromPersistentFields,
+  recordBookingClick,
+  recordSearch,
   saveProfile,
+  saveUserProfileFields,
+  summarizeBehavior,
   updateProfile,
   validatePreferenceProfile,
 } from '../packages/preferences/src/index.mjs';
@@ -1095,12 +1102,14 @@ test('browser profile storage saves and loads persistent fields', () => {
   const now = new Date('2026-09-10T00:00:00.000Z');
   const profile = profileFromPersistentFields({
     preferredAreas: ['Central'],
+    preferredVenues: ['SUSF'],
     preferredCourts: ['Court 4', 'Court 5'],
     avoidedCourts: ['Court 6'],
     preferredSurfaces: ['synthetic'],
     priceSensitivity: 'high',
     preferredTimeWindows: [{ before: '13:00' }, { after: '17:00' }],
     preferredDurationMinutes: 60,
+    maxTravelMinutes: 30,
   }, { now });
 
   saveProfile(profile, { storage, now });
@@ -1108,11 +1117,72 @@ test('browser profile storage saves and loads persistent fields', () => {
 
   assert.equal(loaded.version, 2);
   assert.deepEqual(findItem(loaded.preferences, 'area').rule.include, ['Central']);
+  assert.deepEqual(findItem(loaded.preferences, 'venue').rule.include, ['SUSF']);
   assert.deepEqual(findItem(loaded.preferences, 'court').rule.include, ['Court 4', 'Court 5']);
   assert.deepEqual(findItem(loaded.preferences, 'court').rule.exclude, ['Court 6']);
   assert.deepEqual(findItem(loaded.preferences, 'surface').rule.include, ['synthetic']);
   assert.equal(findItem(loaded.preferences, 'price').importance, 'high');
   assert.equal(findStructuredItem(loaded, 'duration').rule.exactMinutes, 60);
+  assert.equal(loaded.transportPreference.maxTransitMinutes, 30);
+});
+
+test('browser user profile fields roundtrip canonical MVP values', () => {
+  const storage = fakeLocalStorage();
+  const saved = saveUserProfileFields({
+    preferredDays: ['Tuesday'],
+    preferredTimeWindows: [{ start: '17:00', end: '20:00' }],
+    typicalDurationMinutes: 60,
+    maxTravelMinutes: 30,
+    preferredVenues: ['SUSF'],
+  }, { storage, now: new Date('2026-09-10T00:00:00.000Z') });
+  const loaded = loadUserProfileFields({ storage });
+
+  assert.deepEqual(saved, {
+    preferredDays: ['Tuesday'],
+    preferredTimeWindows: [{ start: '17:00', end: '20:00' }],
+    typicalDurationMinutes: 60,
+    maxTravelMinutes: 30,
+    preferredVenues: ['SUSF'],
+  });
+  assert.deepEqual(loaded, saved);
+});
+
+test('behavior storage roundtrip summarizes booking clicks', () => {
+  const storage = fakeLocalStorage();
+  recordSearch({ rawRequest: '明天在USYD打球', resolvedLocation: 'USYD' }, { storage, now: new Date('2026-09-10T00:00:00.000Z') });
+  recordBookingClick({
+    venue: 'SUSF',
+    court: 'Court 4',
+    startTime: '2026-09-10T18:00:00+10:00',
+    durationMinutes: 60,
+    bookingProvider: 'susf.example.test',
+  }, { storage, now: new Date('2026-09-10T01:00:00.000Z') });
+
+  const loaded = loadBehaviorHistory({ storage });
+  const summary = summarizeBehavior(loaded);
+
+  assert.equal(loaded.recentSearches[0].rawRequest, '明天在USYD打球');
+  assert.equal(loaded.recentBookingClicks[0].court, 'Court 4');
+  assert.equal(summary.bookingClickCount, 1);
+  assert.deepEqual(summary.recentStartTimes, ['18:00']);
+});
+
+test('behavior storage keeps bounded newest history', () => {
+  const storage = fakeLocalStorage();
+  for (let index = 0; index < 25; index += 1) {
+    recordBookingClick({
+      venue: 'SUSF',
+      court: `Court ${index}`,
+      startTime: `2026-09-${String(index + 1).padStart(2, '0')}T18:00:00+10:00`,
+    }, { storage, now: new Date(`2026-09-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`) });
+  }
+
+  const loaded = loadBehaviorHistory({ storage });
+  assert.equal(loaded.recentBookingClicks.length, 20);
+  assert.equal(loaded.recentBookingClicks[0].court, 'Court 24');
+  assert.equal(loaded.recentBookingClicks.at(-1).court, 'Court 5');
+  assert.equal(clearBehaviorHistory({ storage }), true);
+  assert.equal(loadBehaviorHistory({ storage }).recentBookingClicks.length, 0);
 });
 
 test('browser profile storage reports corrupted JSON', () => {

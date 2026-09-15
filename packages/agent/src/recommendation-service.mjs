@@ -3,6 +3,11 @@ import { createInitialAgentState } from './state.mjs';
 import { observeConfiguredAvailabilityProviders } from './observations.mjs';
 import { normalizeSearchScope } from './search-scope.mjs';
 import {
+  buildPreferredTemporalPolicy,
+  classifyTemporalSpecificity,
+  inferPersonalizedTemporalPolicy,
+} from './temporal-policy.mjs';
+import {
   applyCandidateEligibilityGate,
   enrichCandidates,
   resolveTemporalWindow,
@@ -72,6 +77,11 @@ function demoTemporalTrace(label, value) {
   if (process.env.TEMPORAL_TRACE === '1') {
     console.log(`[TEMPORAL_TRACE] ${label}=${value ?? ''}`);
   }
+}
+
+function personalizationTrace(label, value) {
+  if (process.env.PERSONALIZATION_TRACE !== '1' && process.env.TEMPORAL_TRACE !== '1') return;
+  console.log(`[PERSONALIZATION_TRACE] ${label}=${typeof value === 'string' ? value : JSON.stringify(value)}`);
 }
 
 function defaultMapsProvider() {
@@ -1034,6 +1044,9 @@ async function recommendCourts({
   profileLocation = null,
   locationResolver = null,
   mapsProvider = null,
+  temporalPolicyProvider = null,
+  userProfile = null,
+  recentBehavior = {},
   now = new Date(),
   maxIterations = Number(process.env.RECOMMEND_MAX_ITERATIONS ?? 2),
   minCandidates = Number(process.env.RECOMMEND_MIN_CANDIDATES ?? 1),
@@ -1053,9 +1066,9 @@ async function recommendCourts({
 
   const startedAt = now.toISOString();
   await loadEnvFile();
-  let profile;
+  let requestPreferences;
   try {
-    profile = await interpretPreferences(request, { now });
+    requestPreferences = await interpretPreferences(request, { now });
   } catch (error) {
     return {
       ok: false,
@@ -1068,19 +1081,48 @@ async function recommendCourts({
     };
   }
 
-  const searchScope = await searchScopeForProfileContext(profile, {
+  const searchScope = await searchScopeForProfileContext(requestPreferences, {
     currentLocation,
     profileLocation,
     locationResolver,
     mapsProvider: mapsProvider ?? defaultMapsProvider(),
     now,
   });
-  const runtimeProfile = {
-    ...profile,
+  const baseRuntimeProfile = {
+    ...requestPreferences,
     searchScope: {
-      ...(profile.searchScope ?? {}),
+      ...(requestPreferences.searchScope ?? {}),
       ...searchScope,
     },
+  };
+  personalizationTrace('REQUEST_TEMPORAL', baseRuntimeProfile.searchScope?.temporalWindow ?? null);
+  personalizationTrace('USER_PROFILE', {
+    hasProfile: Boolean(userProfile),
+    preferredDays: userProfile?.preferredDays ?? [],
+    preferredTimeWindows: userProfile?.preferredTimeWindows ?? [],
+    typicalDurationMinutes: userProfile?.typicalDurationMinutes ?? userProfile?.preferredDurationMinutes ?? null,
+    maxTravelMinutes: userProfile?.maxTravelMinutes ?? null,
+    preferredVenues: userProfile?.preferredVenues ?? [],
+  });
+  personalizationTrace('BEHAVIOR_SUMMARY', {
+    bookingClickCount: recentBehavior?.bookingClickCount ?? 0,
+    selectionCount: recentBehavior?.selectionCount ?? 0,
+    searchCount: recentBehavior?.searchCount ?? 0,
+    timeBuckets: recentBehavior?.timeBuckets ?? null,
+    dominantTimeBucket: recentBehavior?.dominantTimeBucket ?? null,
+    confidence: recentBehavior?.confidence ?? null,
+  });
+  const preferredTemporalPolicy = await buildPreferredTemporalPolicy({
+    requestPreferences: baseRuntimeProfile,
+    userProfile,
+    recentBehavior,
+    provider: temporalPolicyProvider,
+  });
+  personalizationTrace('POLICY_MODE', preferredTemporalPolicy.mode);
+  personalizationTrace('EVIDENCE_USED', preferredTemporalPolicy.evidenceUsed);
+  const runtimeProfile = {
+    ...baseRuntimeProfile,
+    preferredTemporalPolicy,
   };
 
   const initialState = createInitialAgentState({
@@ -1131,7 +1173,10 @@ async function recommendCourts({
 }
 
 export {
+  buildPreferredTemporalPolicy,
+  classifyTemporalSpecificity,
   diversifyRankedCandidates,
+  inferPersonalizedTemporalPolicy,
   locationProviderRouting,
   providerOptionsForState,
   recommendCourts,

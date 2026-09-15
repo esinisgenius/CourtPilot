@@ -144,11 +144,28 @@ function stripSessionFields(profile, { now = new Date() } = {}) {
   }, { now });
 }
 
-function envelopeForProfile(profile) {
+function normalizeUserProfileFields(fields = {}) {
+  return {
+    preferredDays: Array.isArray(fields.preferredDays) ? fields.preferredDays.filter((item) => typeof item === 'string') : [],
+    preferredTimeWindows: Array.isArray(fields.preferredTimeWindows)
+      ? fields.preferredTimeWindows
+        .filter((window) => typeof window?.start === 'string' && typeof window?.end === 'string')
+        .map((window) => ({ start: window.start, end: window.end }))
+      : [],
+    typicalDurationMinutes: Number.isFinite(Number(fields.typicalDurationMinutes))
+      ? Number(fields.typicalDurationMinutes)
+      : Number.isFinite(Number(fields.preferredDurationMinutes)) ? Number(fields.preferredDurationMinutes) : null,
+    maxTravelMinutes: Number.isFinite(Number(fields.maxTravelMinutes)) ? Number(fields.maxTravelMinutes) : null,
+    preferredVenues: Array.isArray(fields.preferredVenues) ? fields.preferredVenues.filter((item) => typeof item === 'string') : [],
+  };
+}
+
+function envelopeForProfile(profile, userProfile = null) {
   return {
     storageVersion: LOCAL_PROFILE_STORAGE_VERSION,
     profileVersion: PREFERENCE_VERSION,
     profile,
+    ...(userProfile ? { userProfile: normalizeUserProfileFields(userProfile) } : {}),
   };
 }
 
@@ -177,6 +194,17 @@ function loadProfile({ storage = browserStorage(), now = new Date() } = {}) {
   return stripSessionFields(profile, { now });
 }
 
+function loadUserProfileFields({ storage = browserStorage(), now = new Date() } = {}) {
+  if (!storageAvailable(storage)) return null;
+  const raw = storage.getItem(LOCAL_PROFILE_STORAGE_KEY);
+  const parsed = raw ? JSON.parse(raw) : null;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  if (parsed.userProfile) return normalizeUserProfileFields(parsed.userProfile);
+  const profile = parseEnvelope(raw);
+  if (!profile) return null;
+  return normalizeUserProfileFields(persistentFieldsFromProfile(profile, { now }));
+}
+
 function saveProfile(profile, { storage = browserStorage(), now = new Date() } = {}) {
   if (!storageAvailable(storage)) {
     throw new PreferenceBrowserStoreError('LOCAL_STORAGE_UNAVAILABLE', 'localStorage is not available');
@@ -184,6 +212,16 @@ function saveProfile(profile, { storage = browserStorage(), now = new Date() } =
   const persistentProfile = stripSessionFields(profile, { now });
   storage.setItem(LOCAL_PROFILE_STORAGE_KEY, JSON.stringify(envelopeForProfile(persistentProfile)));
   return persistentProfile;
+}
+
+function saveUserProfileFields(fields, { storage = browserStorage(), now = new Date() } = {}) {
+  if (!storageAvailable(storage)) {
+    throw new PreferenceBrowserStoreError('LOCAL_STORAGE_UNAVAILABLE', 'localStorage is not available');
+  }
+  const userProfile = normalizeUserProfileFields(fields);
+  const existing = loadProfile({ storage, now }) ?? createDefaultPreferenceProfile({ now });
+  storage.setItem(LOCAL_PROFILE_STORAGE_KEY, JSON.stringify(envelopeForProfile(existing, userProfile)));
+  return userProfile;
 }
 
 function clearProfile({ storage = browserStorage() } = {}) {
@@ -293,13 +331,19 @@ function priceSensitivityFromProfile(profile) {
 function persistentFieldsFromProfile(profile, { now = new Date() } = {}) {
   const normalized = stripSessionFields(profile, { now });
   return {
+    preferredDays: [],
     preferredAreas: valuesFromListRule(normalized, 'area', 'include'),
     preferredCourts: valuesFromListRule(normalized, 'court', 'include'),
+    preferredVenues: valuesFromListRule(normalized, 'venue', 'include'),
     avoidedCourts: valuesFromListRule(normalized, 'court', 'exclude'),
     preferredSurfaces: valuesFromListRule(normalized, 'surface', 'include'),
     priceSensitivity: priceSensitivityFromProfile(normalized),
     preferredTimeWindows: timeWindowsFromProfile(normalized),
+    typicalDurationMinutes: preferredDurationFromProfile(normalized),
     preferredDurationMinutes: preferredDurationFromProfile(normalized),
+    maxTravelMinutes: normalized.transportPreference?.maxTransitMinutes
+      ?? normalized.transportPreference?.maxWalkMinutes
+      ?? null,
   };
 }
 
@@ -321,6 +365,7 @@ function listPreference(feature, rule, { importance = 'medium', sourceText = '',
 function profileFromPersistentFields(fields = {}, { now = new Date() } = {}) {
   const preferences = [];
   if (fields.preferredAreas?.length) preferences.push(listPreference('area', { include: fields.preferredAreas }, { sourceText: 'preferred areas' }));
+  if (fields.preferredVenues?.length) preferences.push(listPreference('venue', { include: fields.preferredVenues }, { sourceText: 'preferred venues' }));
   if (fields.preferredCourts?.length || fields.avoidedCourts?.length) {
     preferences.push(listPreference('court', {
       ...(fields.preferredCourts?.length ? { include: fields.preferredCourts } : {}),
@@ -345,9 +390,10 @@ function profileFromPersistentFields(fields = {}, { now = new Date() } = {}) {
   for (const window of fields.preferredTimeWindows ?? []) {
     preferences.push(listPreference('start_time', window, { sourceText: 'preferred time window' }));
   }
-  if (fields.preferredDurationMinutes) {
+  const preferredDuration = fields.typicalDurationMinutes ?? fields.preferredDurationMinutes;
+  if (preferredDuration) {
     preferences.push(listPreference('duration', {
-      exactMinutes: Number(fields.preferredDurationMinutes),
+      exactMinutes: Number(preferredDuration),
     }, { sourceText: 'preferred duration' }));
   }
 
@@ -360,6 +406,9 @@ function profileFromPersistentFields(fields = {}, { now = new Date() } = {}) {
       source: 'default',
       isExplicit: false,
     },
+    transportPreference: fields.maxTravelMinutes ? {
+      maxTransitMinutes: Number(fields.maxTravelMinutes),
+    } : {},
     preferences,
     hardConstraints: [],
     objectives: [],
@@ -376,10 +425,12 @@ export {
   clearProfile,
   createDefaultPreferenceProfile,
   deterministicPersistence,
+  loadUserProfileFields,
   loadProfile,
   mergeProfiles,
   persistentFieldsFromProfile,
   profileFromPersistentFields,
+  saveUserProfileFields,
   saveProfile,
   updateProfile,
 };
