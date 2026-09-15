@@ -8,6 +8,7 @@ export {
   allowedObjectiveDirections,
   allowedObjectiveFeatures,
   allowedPeriods,
+  allowedPersistence,
   allowedTransportModes,
   allowedTypes,
   normalizePreferenceProfile,
@@ -33,6 +34,21 @@ export {
 export {
   DEFAULT_PREFERENCE_PATH,
   PreferenceStoreError,
+  createEmptyPreferenceProfile,
   loadPreferenceProfile,
   savePreferenceProfile,
 } from './store.mjs';
+
+export {
+  LOCAL_PROFILE_STORAGE_KEY,
+  LOCAL_PROFILE_STORAGE_VERSION,
+  PreferenceBrowserStoreError,
+  clearProfile,
+  createDefaultPreferenceProfile,
+  loadProfile,
+  mergeProfiles,
+  persistentFieldsFromProfile,
+  profileFromPersistentFields,
+  saveProfile,
+  updateProfile,
+} from './browser-store.mjs';

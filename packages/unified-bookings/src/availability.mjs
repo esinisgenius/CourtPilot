@@ -40,6 +40,9 @@ function normalizeVenueConfig(config) {
     name: config.name ?? 'Unified Bookings venue',
     suburb: config.suburb ?? null,
     provider: 'unified-bookings',
+    sport: config.sport ?? null,
+    location: config.location ?? null,
+    address: config.address ?? null,
     officialUrl: config.officialUrl,
     origin: url.origin,
     locationUuid,
@@ -76,9 +79,10 @@ function extractRuntimeApiConfig(text) {
   };
 }
 
-async function fetchText(url, { fetchImpl = fetch, headers = {} } = {}) {
+async function fetchText(url, { fetchImpl = fetch, headers = {}, signal = null } = {}) {
   const response = await fetchImpl(url, {
     method: 'GET',
+    signal,
     headers: {
       accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       ...headers,
@@ -90,8 +94,8 @@ async function fetchText(url, { fetchImpl = fetch, headers = {} } = {}) {
   return response.text();
 }
 
-async function discoverPublicApiConfig(venue, { fetchImpl = fetch } = {}) {
-  const html = await fetchText(venue.officialUrl, { fetchImpl });
+async function discoverPublicApiConfig(venue, { fetchImpl = fetch, signal = null } = {}) {
+  const html = await fetchText(venue.officialUrl, { fetchImpl, signal });
   const inlineConfig = extractRuntimeApiConfig(html);
   if (inlineConfig) return inlineConfig;
 
@@ -99,6 +103,7 @@ async function discoverPublicApiConfig(venue, { fetchImpl = fetch } = {}) {
   for (const scriptUrl of scriptUrls) {
     const script = await fetchText(scriptUrl, {
       fetchImpl,
+      signal,
       headers: { accept: 'application/javascript,text/javascript,*/*' },
     });
     const config = extractRuntimeApiConfig(script);
@@ -108,9 +113,10 @@ async function discoverPublicApiConfig(venue, { fetchImpl = fetch } = {}) {
   throw new UnifiedBookingsAvailabilityError('UNIFIED_API_CONFIG_MISSING', `Unable to discover public Unified Bookings API config for ${venue.name}`);
 }
 
-async function fetchJson(url, { apiKey, fetchImpl = fetch } = {}) {
+async function fetchJson(url, { apiKey, fetchImpl = fetch, signal = null } = {}) {
   const response = await fetchImpl(url, {
     method: 'GET',
+    signal,
     headers: {
       accept: 'application/json, text/plain, */*',
       'x-api-key': apiKey,
@@ -291,6 +297,9 @@ function buildSlotsForResource({ venue, location, resource, blockers, date, dura
         id: venue.id,
         name: venue.name,
         providerVenueId: location.uuid,
+        suburb: venue.suburb,
+        ...(venue.location ? { location: venue.location } : {}),
+        ...(venue.address ? { address: venue.address } : {}),
       },
       court: {
         id: `unified-bookings-court-${resource.uuid}`,
@@ -304,6 +313,12 @@ function buildSlotsForResource({ venue, location, resource, blockers, date, dura
         amount: null,
         currency: 'AUD',
         confidence: 'unknown',
+      },
+      eligibility: {
+        sport: {
+          type: 'tennis',
+          proof: 'provider_resource',
+        },
       },
       provenance: {
         source: 'live',
@@ -375,21 +390,22 @@ async function readVenueAvailability(config, {
   durationMinutes = 60,
   fetchImpl = fetch,
   observedAt = new Date().toISOString(),
+  signal = null,
 } = {}) {
   if (!Number.isInteger(durationMinutes) || durationMinutes < 1) {
     throw new Error('durationMinutes must be a positive integer');
   }
 
   const venue = normalizeVenueConfig(config);
-  const apiConfig = await discoverPublicApiConfig(venue, { fetchImpl });
+  const apiConfig = await discoverPublicApiConfig(venue, { fetchImpl, signal });
   const baseUrls = buildUnifiedBookingsUrls({
     apiBaseUrl: apiConfig.apiBaseUrl,
     locationUuid: venue.locationUuid,
     date,
   });
   const [rawLocation, rawResources] = await Promise.all([
-    fetchJson(baseUrls.location, { apiKey: apiConfig.apiKey, fetchImpl }),
-    fetchJson(baseUrls.resources, { apiKey: apiConfig.apiKey, fetchImpl }),
+    fetchJson(baseUrls.location, { apiKey: apiConfig.apiKey, fetchImpl, signal }),
+    fetchJson(baseUrls.resources, { apiKey: apiConfig.apiKey, fetchImpl, signal }),
   ]);
   const location = normalizeLocation(rawLocation, venue);
   const resources = normalizeResources(rawResources);
@@ -403,7 +419,7 @@ async function readVenueAvailability(config, {
       resource,
       date,
     }).bookingsPublic;
-    const rawBookings = await fetchJson(url, { apiKey: apiConfig.apiKey, fetchImpl });
+    const rawBookings = await fetchJson(url, { apiKey: apiConfig.apiKey, fetchImpl, signal });
     bookingsByResourceUuid.set(resource.uuid, normalizeBlockers(rawBookings));
   }));
 
@@ -423,6 +439,7 @@ async function readAvailability({
   date = todayIsoDate(),
   durationMinutes = 60,
   fetchImpl = fetch,
+  signal = null,
 } = {}) {
   const observedAt = new Date().toISOString();
   const results = [];
@@ -435,6 +452,7 @@ async function readAvailability({
         durationMinutes,
         fetchImpl,
         observedAt,
+        signal,
       }));
     } catch (error) {
       failures.push({

@@ -152,6 +152,8 @@ const ruleByFeature = {
   date: nullableStrictObject({ dateRange: dateRangeSchema }),
   court: listRuleSchema,
   venue: listRuleSchema,
+  area: listRuleSchema,
+  surface: listRuleSchema,
   travel_time: travelTimeRuleSchema,
   weather: weatherRuleSchema,
   calendar: calendarRuleSchema,

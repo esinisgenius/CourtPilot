@@ -23,12 +23,23 @@ function mergeCandidates(existingCandidates, newCandidates) {
   return [...byId.values()].sort((a, b) => `${a.startTime} ${a.venue} ${a.court}`.localeCompare(`${b.startTime} ${b.venue} ${b.court}`));
 }
 
-function providerObservation(providerId, { status, candidateCount = 0, error = null, observedAt = new Date().toISOString() }) {
+function providerObservation(providerId, {
+  status,
+  candidateCount = 0,
+  error = null,
+  observedAt = new Date().toISOString(),
+  startedAt = null,
+  completedAt = null,
+  durationMs = null,
+} = {}) {
   return {
     providerId,
     status,
     candidateCount,
     error,
+    startedAt,
+    completedAt,
+    durationMs,
     observedAt,
   };
 }
@@ -42,8 +53,8 @@ function recordProviderObservation(factualObservations = {}, observation) {
     availability: {
       ...(factualObservations.availability ?? {}),
       providers,
-      acquisitionFailures: providers
-        .filter((entry) => entry.status === 'failed')
+        acquisitionFailures: providers
+        .filter((entry) => entry.status === 'failed' || entry.status === 'timed_out' || entry.status === 'cancelled')
         .map((entry) => ({
           providerId: entry.providerId,
           code: entry.error?.code ?? 'PROVIDER_ACQUISITION_FAILED',
@@ -58,6 +69,9 @@ async function observeConfiguredAvailabilityProviders(state, {
   providerFetchers = DEFAULT_PROVIDER_FETCHERS,
   availabilityOptions = {},
   candidateBuilder = buildCandidates,
+  providerTimeoutMs = Number(process.env.PROVIDER_TIMEOUT_MS ?? 12000),
+  susfProviderTimeoutMs = null,
+  signal = null,
 } = {}) {
   const current = validateAgentState(state);
   const providerScope = normalizeProviderScope(current.searchScope.providerScope);
@@ -84,22 +98,51 @@ async function observeConfiguredAvailabilityProviders(state, {
       continue;
     }
 
+    const startedAt = new Date().toISOString();
+    const startedMs = Date.now();
+    if (signal?.aborted) {
+      factualObservations = recordProviderObservation(factualObservations, providerObservation(providerId, {
+        status: 'cancelled',
+        startedAt,
+        completedAt: new Date().toISOString(),
+        durationMs: Date.now() - startedMs,
+        error: {
+          code: 'PROVIDER_CANCELLED',
+          message: 'Provider acquisition was cancelled before it started.',
+        },
+      }));
+      nextProviderScope = markProviderObserved(nextProviderScope, providerId, { failed: true });
+      continue;
+    }
+
     try {
-      const availability = await fetchAvailability(availabilityOptions[providerId] ?? availabilityOptions);
+      const availability = await fetchWithBudget(fetchAvailability, availabilityOptions[providerId] ?? availabilityOptions, {
+        providerTimeoutMs: timeoutMsForProvider(providerId, { providerTimeoutMs, susfProviderTimeoutMs }),
+        signal,
+      });
       const newCandidates = candidateBuilder(availability);
       candidates = mergeCandidates(candidates, newCandidates);
       factualObservations = recordProviderObservation(factualObservations, providerObservation(providerId, {
         status: 'success',
         candidateCount: newCandidates.length,
+        startedAt,
+        completedAt: new Date().toISOString(),
+        durationMs: Date.now() - startedMs,
       }));
       nextProviderScope = markProviderObserved(nextProviderScope, providerId);
     } catch (error) {
       const partialAvailability = Array.isArray(error.availability) ? error.availability : [];
       const partialCandidates = candidateBuilder(partialAvailability);
       candidates = mergeCandidates(candidates, partialCandidates);
+      const status = error.code === 'PROVIDER_TIMEOUT'
+        ? 'timed_out'
+        : error.code === 'PROVIDER_CANCELLED' || error.name === 'AbortError' ? 'cancelled' : 'failed';
       factualObservations = recordProviderObservation(factualObservations, providerObservation(providerId, {
-        status: 'failed',
+        status,
         candidateCount: partialCandidates.length,
+        startedAt,
+        completedAt: new Date().toISOString(),
+        durationMs: Date.now() - startedMs,
         error: {
           code: error.code ?? 'PROVIDER_ACQUISITION_FAILED',
           message: error.message,
@@ -118,6 +161,60 @@ async function observeConfiguredAvailabilityProviders(state, {
       providerScope: nextProviderScope,
     },
   });
+}
+
+function timeoutMsForProvider(providerId, {
+  providerTimeoutMs,
+  susfProviderTimeoutMs,
+} = {}) {
+  if (providerId === 'susf' && Number.isFinite(susfProviderTimeoutMs)) return susfProviderTimeoutMs;
+  return providerTimeoutMs;
+}
+
+function providerBudgetError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+async function fetchWithBudget(fetchAvailability, options, {
+  providerTimeoutMs,
+  signal,
+} = {}) {
+  const controller = new AbortController();
+  const abortFromParent = () => controller.abort(signal.reason);
+  if (signal) signal.addEventListener('abort', abortFromParent, { once: true });
+  let timeout = null;
+  try {
+    const timeoutPromise = Number.isFinite(providerTimeoutMs) && providerTimeoutMs > 0
+      ? new Promise((_, reject) => {
+        timeout = setTimeout(() => {
+          const timeoutError = providerBudgetError('PROVIDER_TIMEOUT', `Provider timed out after ${providerTimeoutMs}ms`);
+          controller.abort(timeoutError);
+          setTimeout(() => reject(timeoutError), 1500);
+        }, providerTimeoutMs);
+      })
+      : null;
+    const providerOptions = {
+      ...(options ?? {}),
+      signal: controller.signal,
+    };
+    const fetchPromise = Promise.resolve(fetchAvailability(providerOptions));
+    return timeoutPromise ? await Promise.race([fetchPromise, timeoutPromise]) : await fetchPromise;
+  } catch (error) {
+    if (controller.signal.aborted && controller.signal.reason?.code === 'PROVIDER_TIMEOUT') {
+      const timeoutError = providerBudgetError('PROVIDER_TIMEOUT', controller.signal.reason.message);
+      if (Array.isArray(error.availability)) timeoutError.availability = error.availability;
+      throw timeoutError;
+    }
+    if (signal?.aborted || controller.signal.aborted && controller.signal.reason?.code === 'PROVIDER_CANCELLED') {
+      throw providerBudgetError('PROVIDER_CANCELLED', 'Provider acquisition was cancelled.');
+    }
+    throw error;
+  } finally {
+    if (timeout) clearTimeout(timeout);
+    if (signal) signal.removeEventListener('abort', abortFromParent);
+  }
 }
 
 export {

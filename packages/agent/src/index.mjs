@@ -57,3 +57,13 @@ export {
   validateBoundedRealReplanningAction,
   validateFactualObservations,
 } from './replanner.mjs';
+
+export {
+  recommendCourts,
+} from './recommendation-service.mjs';
+
+export {
+  canonicalVenueInventory,
+  configuredRealtimeVenues,
+  venueInventorySummary,
+} from './venue-inventory.mjs';

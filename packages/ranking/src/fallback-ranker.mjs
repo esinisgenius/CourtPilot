@@ -70,9 +70,41 @@ function softPreferenceSignals(preferenceProfile = {}) {
     }
   }
 
+  if (preferenceProfile.searchScope?.locationSource === 'explicit') {
+    signals.push({
+      feature: 'distance',
+      priority: 'low',
+      direction: 'lower',
+      rule: {},
+      relaxable: true,
+    });
+  }
+
+  if (!hasExplicitTimeSignal(preferenceProfile)) {
+    signals.push({
+      feature: 'default_time_utility',
+      priority: 'low',
+      direction: 'higher',
+      rule: {},
+      relaxable: true,
+    });
+  }
+
   return signals
     .map((signal, index) => ({ ...signal, index }))
     .filter((signal) => priorityValue(signal) > 0);
+}
+
+function hasExplicitTimeSignal(preferenceProfile = {}) {
+  const scope = preferenceProfile.searchScope ?? {};
+  const temporal = scope.temporalWindow ?? {};
+  const window = scope.timeWindow ?? {};
+  if (temporal.timeStart || temporal.timeEnd) return true;
+  if (window.after || window.before || window.start || window.end || window.exact || window.around) return true;
+  return [
+    ...(preferenceProfile.hardConstraints ?? []),
+    ...(preferenceProfile.preferences ?? []),
+  ].some((preference) => preference.feature === 'start_time');
 }
 
 function transportRule(signal, preferenceProfile) {
@@ -139,10 +171,37 @@ function compareConsecutiveAvailability(a, b, signal) {
   return compareNullableNumbers(a.continuousDurationMinutes, b.continuousDurationMinutes, 'higher');
 }
 
+function minutesFromLocalTime(localTime) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(localTime ?? ''));
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return null;
+  return hours * 60 + minutes;
+}
+
+function defaultTimePenalty(snapshot) {
+  const minutes = minutesFromLocalTime(snapshot.slot.localTime);
+  if (minutes === null) return 4;
+  if (minutes < 8 * 60) return 3;
+  if (minutes < 10 * 60) return 1;
+  if (minutes <= 20 * 60) return 0;
+  if (minutes <= 22 * 60) return 1;
+  return 2;
+}
+
 function compareSignal(a, b, signal, preferenceProfile) {
   if (signal.feature === 'price') {
     const direction = signal.direction === 'higher' || signal.direction === 'maximize' ? 'higher' : 'lower';
     return compareNullableNumbers(a.price.amount, b.price.amount, direction);
+  }
+
+  if (signal.feature === 'distance') {
+    return compareNullableNumbers(a.venue.distanceKm, b.venue.distanceKm, 'lower');
+  }
+
+  if (signal.feature === 'default_time_utility') {
+    return compareNullableNumbers(defaultTimePenalty(a), defaultTimePenalty(b), 'lower');
   }
 
   if (signal.feature === 'travel_time') {

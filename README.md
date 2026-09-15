@@ -1,86 +1,203 @@
 # TennisAgent
 
-Preference-Aware Personal Tennis Agent.
+A preference-aware tennis court search agent for Sydney that can diagnose failed searches and safely replan while deterministic code protects hard constraints.
 
-## Current Progress
+## Problem
 
-Implemented:
+Tennis court search is awkward because availability is fragmented across providers, and the user's real preferences are often fuzzy or conflicting: price, travel time, preferred courts, time windows, weather, calendar conflicts, and whether two continuous hours are available. A fixed filter workflow can easily return no result without knowing which preference to relax next.
 
-- SUSF authenticated availability adapter
-- Live SUSF Court availability path through `packages/susf`
-- Dynamic Tennis Court discovery
-- Court 1-6 currently verified
-- Next-hour availability detection
-- Pre-payment rate table extraction
-- Candidate price options for verified Peak / Off-Peak rates
-- Natural-language Preference Interpreter interface
-- Structured Preference Profile validation
-- Hard vs soft preference representation
-- Local JSON Preference Profile store
-- Candidate Core for factual feature extraction
-- Australia/Sydney timezone handling
+TennisAgent treats explicit constraints as rules and soft preferences as trade-offs. The LLM helps interpret and reason about ambiguous preferences, while code owns factual checks, filtering, bounded replanning, and termination.
+
+## Example
+
+User preference:
+
+> Tomorrow after 5 PM, prefer Court 4/5/6, cheaper if possible, ideally two consecutive hours.
+
+Compact replanning trace:
+
+```text
+Observation:
+preferred courts unavailable
+
+Evaluation:
+NO_FEASIBLE_CANDIDATES
+
+Failure diagnosis:
+preferred_courts_unavailable
+
+Replanning action:
+INCLUDE_NONPREFERRED_COURTS
+
+New observation:
+a feasible non-preferred court becomes available
+
+Final:
+SATISFACTORY
+```
+
+This is a behavioral pattern covered by the agent eval suite. The README does not claim a specific live court, price, or provider result for that example.
+
+## Agent Architecture
+
+```text
+User Preference
+      |
+      v
+Search / Observe
+      |
+      v
+Hard Constraint Filter
+      |
+      v
+Rank Candidates
+      |
+      v
+Evaluate Result
+      |
+      v
+Failure Diagnosis
+      |
+      v
+Bounded LLM Replanner
+      |
+      v
+Deterministic Executor
+      |
+      v
+Re-observe
+```
+
+Deterministic code:
+
+- enforces hard constraints before ranking;
+- computes factual candidate attributes from provider/API data;
+- defines the legal replanning action contract;
+- executes bounded state changes such as expanding radius or including non-preferred courts;
+- controls max iterations and termination;
+- provides deterministic ranking fallback when the LLM ranker fails.
+
+LLM components:
+
+- interpret natural-language preferences into a structured Preference Profile;
+- reason over soft-preference trade-offs and failure context;
+- rank hard-filtered candidates when a ranker provider is available;
+- select among bounded legal replanning actions where appropriate.
+
+The LLM is not allowed to freely relax explicit hard constraints, invent missing facts, create candidates, or modify factual availability.
+
+## Failure-Aware Replanning
+
+The replanner uses failed constraints and observation context instead of defaulting to generic expansion. Supported examples include:
+
+```text
+preferred_courts_unavailable
+  -> INCLUDE_NONPREFERRED_COURTS
+
+no_availability_in_time_window
+  -> bounded SHIFT_TIME_WINDOW while preserving hard temporal boundaries
+```
+
+The execution step is deterministic: each accepted action must be in the legal contract and must change search state or stop/ask the user.
+
+## Safety Invariants
+
+- Explicit hard constraints are never silently relaxed.
+- Hard-invalid candidates are filtered before ranking.
+- Missing facts are not treated as constraint violations.
+- Replanning actions must come from a bounded legal action contract.
+- Replanning must change state or observation instead of looping in place.
+- The agent terminates after bounded iterations.
+- Booking, checkout, and payment automation are out of scope.
+
+## Evaluation
+
+Current verified results:
+
+```text
+npm test: 284 passed, 0 failed
+npm run eval:agent-behavior: 14 passed, 0 failed
+```
+
+The behavior regression suite covers:
+
+- initially satisfactory results;
+- mild soft-preference violations;
+- missing consecutive two-hour slots;
+- preferred court unavailability;
+- hard time-window constraints;
+- hard transit limits;
+- missing accessibility facts;
+- ranking trade-offs;
+- ranker fallback;
+- observation changes after replanning;
+- max-iteration termination;
+- ambiguous cases requiring `ASK_USER` / `STOP`;
+- hard filtering before ranking.
+
+These evals are regression coverage for a bounded scenario set, not proof of universal production reliability.
+
+## Tech Stack
+
+- Node.js ES modules
+- Playwright for authenticated SUSF / PerfectMind availability access
+- OpenAI structured output for preference interpretation and optional LLM ranking/replanning
 - Open-Meteo weather enrichment
-- Google Calendar FreeBusy adapter
-- Enriched candidate hard filtering
-- Agent State and Real LLM Replanner loop
-- Maps factual layer for location resolution, saved play areas, tennis venue discovery, venue-level travel time, and unified venue contracts
-- Tests
+- Apple Calendar EventKit and Google Calendar FreeBusy adapters
+- Google Maps Platform adapters for location, venue, and travel-time facts
+- Node's built-in test runner
 
-Not implemented yet:
+## Repository Structure
 
-- Candidate-level Peak / Off-Peak mapping
-- LLM candidate ranking
-- MCP Server
-- Agent orchestration
-- Web UI
-- Automatic booking
+```text
+packages/agent        bounded replanning loop, evaluator, actions, search scope
+packages/core         candidate features, hard constraints, enrichment contracts
+packages/preferences  Preference Profile schema, interpreter, local store
+packages/ranking      LLM ranker interface and deterministic fallback ranker
+packages/susf         SUSF / PerfectMind availability adapter
+packages/weather      Open-Meteo adapter and cache
+packages/calendar     Apple EventKit and Google FreeBusy adapters
+packages/maps         location, venue discovery, travel time, saved play areas
+packages/bookable     provider adapter
+packages/sportlogic   provider adapter
+packages/intrac       provider adapter
+packages/unified-bookings provider adapter
+eval                  preference and agent behavior eval runners/cases
+tests                 offline unit and behavior tests
+scripts               local CLI checks and demos
+```
 
-## Commands
+## Quick Start
+
+```bash
+npm install
+npm test
+npm run eval:agent-behavior
+```
+
+Useful local commands:
+
+```bash
+npm run preference:set -- "我主要想便宜，最好后一小时没人，13点前或者17点以后都行"
+npm run preference:show
+npm run feasible:synthetic
+```
+
+Provider checks exist for SUSF, calendar, weather, maps, and other adapters, but some call real external services and may require local auth or API keys. For SUSF, login is manual:
 
 ```bash
 npm run susf:login
 npm run susf:check
-npm run preference:set -- "选一个最近几天的连续两小时没人的最便宜的场地，13点前或者17点以后都行，尽量不要在边上的court3和court6"
-npm run preference:show
-npm run candidates
-npm run preview
-npm run weather:check
-npm run calendar:authorize
-npm run calendar:check
-npm run calendar:login
-npm run maps:resolve -- "USYD"
-npm run maps:venues -- "USYD"
-npm run maps:check -- "University of Sydney"
-npm run feasible
-npm test
 ```
 
-`preference:set` uses OpenAI structured JSON output. Set `OPENAI_API_KEY` in `.env` or the shell first.
+`preference:set` uses OpenAI structured JSON output and requires `OPENAI_API_KEY`. Calendar, Maps, and live provider checks require their own local configuration. Runtime secrets and personal data under `.auth/`, `.env`, `data/preferences.json`, `data/saved-play-areas.json`, and `output/` are ignored.
 
-Weather uses Open-Meteo hourly forecasts. Candidate start times are mapped to the containing local forecast hour in `Australia/Sydney`, so `18:15` and `18:30` both use the `18:00` hourly row for that local date. Forecasts are requested in batches for the candidate date window and cached in memory for 20 minutes.
+## Limitations
 
-Calendar uses a provider selector. The local-first default is `CALENDAR_PROVIDER=auto`: on macOS it tries Apple Calendar through EventKit first, then falls back to Google Calendar FreeBusy if Apple is unavailable or denied and Google is configured. `CALENDAR_PROVIDER=apple` disables Google fallback; `CALENDAR_PROVIDER=google` skips Apple and uses Google only.
-
-Apple Calendar uses macOS system Calendar permission through EventKit. It does not need an Apple ID, Apple password, iCloud private API, Calendar database access, or UI automation. `npm run calendar:authorize` explicitly asks macOS for Calendar access. The Swift bridge only returns busy intervals and never returns event titles, notes, attendees, URLs, descriptions, or locations.
-
-Google Calendar is an optional fallback for non-macOS, cloud deployment, or other users. It uses the FreeBusy API with `https://www.googleapis.com/auth/calendar.freebusy`, stores the OAuth refresh token locally at `.auth/google-calendar.json`, and exposes only busy intervals to candidate enrichment.
-
-Hard filtering is deterministic. Calendar busy is a default hard rejection; Calendar unknown is not treated as free. Weather is factual enrichment only unless the Preference Profile contains an explicit hard weather constraint, in which case unknown weather is not treated as good weather.
-
-Maps uses Google Maps Platform server APIs when `GOOGLE_MAPS_API_KEY` is configured. Location can come from explicit user text, a saved play area, or runtime device geolocation. Explicit user locations take priority and device geolocation is runtime context only; it is not written into the durable Preference Profile.
-
-Venue discovery starts with a deterministic 3 km radius. That radius is search policy, not a user distance preference. User phrases such as "near", "not too far", or "within 15 minutes" should be represented as `travel_time`; straight-line `geoDistanceMeters` is provider metadata only. The default travel mode is `TRANSIT` with `product_default` as its value source unless the user explicitly asks for walking, driving, or public transport.
-
-Maps-discovered venues are venue-level alternatives. Their availability is `unknown` unless reconciled to a verified provider such as SUSF. The system must not present a Google Places venue as bookable at a specific time without a real availability source.
-
-Google Maps real smoke status: EXTERNAL BLOCKER / NOT VERIFIED as of 2026-09-04. The Maps adapter and contracts are implemented and covered by offline synthetic/mocked tests, but real Google provider verification is blocked by Google Cloud review. Do not treat Google Places venue availability as verified until a future real smoke is completed after approval.
-
-The Real LLM Replanner consumes the Preference Profile, Agent State, and factual observations. It evaluates the current candidate set, accepts only bounded actions (`EXPAND_RADIUS`, `SWITCH_SEARCH_AREA`, `ASK_USER`, `SATISFACTORY`, `STOP`), validates the action schema, executes deterministic state changes, and then asks the caller for the next factual observation pass. Synthetic replanning tests use mocked Maps observations only.
-
-Runtime secrets and personal data are ignored:
-
-- `.auth/`
-- `.env`
-- `data/preferences.json`
-- `data/saved-play-areas.json`
-- `output/`
+- This is search and recommendation assistance, not autonomous booking or payment.
+- Provider coverage is limited and uneven; verified SUSF availability uses the SUSF / PerfectMind path, while other provider packages are adapter-specific.
+- Live availability depends on external provider reliability, authentication state, and provider page/API changes.
+- Maps-discovered venues are venue-level alternatives unless reconciled to a verified availability source.
+- Candidate-level price mapping is still limited; the system should only display price when it is actually fetched.
+- Behavior evals cover a bounded set of scenarios.
+- Preference interpretation, LLM ranking, and LLM replanning remain provider-dependent, with deterministic fallbacks where implemented.

@@ -39,6 +39,14 @@ export {
 } from './location-resolver.mjs';
 
 export {
+  CANONICAL_LOCATIONS,
+  allCanonicalWeatherLocations,
+  canonicalWeatherLocation,
+  normalizeLocationQuery,
+  resolveCanonicalLocation,
+} from './canonical-locations.mjs';
+
+export {
   DEFAULT_TENNIS_QUERIES,
   SUSF_RECONCILIATION,
   availabilityForVenue,

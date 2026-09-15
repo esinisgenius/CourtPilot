@@ -75,11 +75,36 @@ function validateCanonicalAvailability(availability) {
   assertNonEmptyString(availability.venue?.id, 'venue.id');
   assertNonEmptyString(availability.venue?.name, 'venue.name');
   assertNonEmptyString(availability.venue?.providerVenueId, 'venue.providerVenueId');
+  if (availability.venue.location !== undefined && availability.venue.location !== null) {
+    const lat = availability.venue.location.lat;
+    const lng = availability.venue.location.lng;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      throw new Error('Invalid canonical availability: venue.location must contain numeric lat/lng');
+    }
+  }
+  if (availability.venue.address !== undefined && availability.venue.address !== null && typeof availability.venue.address !== 'string') {
+    throw new Error('Invalid canonical availability: venue.address must be a string or null');
+  }
+  if (availability.venue.suburb !== undefined && availability.venue.suburb !== null && typeof availability.venue.suburb !== 'string') {
+    throw new Error('Invalid canonical availability: venue.suburb must be a string or null');
+  }
   assertNonEmptyString(availability.court?.id, 'court.id');
   assertNonEmptyString(availability.court?.name, 'court.name');
   assertNonEmptyString(availability.court?.providerCourtId, 'court.providerCourtId');
   if (availability.court.surface !== null && typeof availability.court.surface !== 'string') {
     throw new Error('Invalid canonical availability: court.surface must be a string or null');
+  }
+  if (availability.eligibility !== undefined) {
+    const sport = availability.eligibility?.sport;
+    if (!sport || typeof sport !== 'object' || Array.isArray(sport)) {
+      throw new Error('Invalid canonical availability: eligibility.sport must be an object when eligibility is present');
+    }
+    if (sport.type !== 'tennis') {
+      throw new Error('Invalid canonical availability: eligibility.sport.type must be tennis');
+    }
+    if (sport.proof !== 'provider_resource' && sport.proof !== 'provider_venue' && sport.proof !== 'verified_booking_page') {
+      throw new Error('Invalid canonical availability: eligibility.sport.proof is not supported');
+    }
   }
 
   assertIsoWithTimezone(availability.slot?.start, 'slot.start');
@@ -120,6 +145,7 @@ function canonicalAvailability({
   durationMinutes,
   priceOptions = [],
   price = firstVerifiedPrice(priceOptions),
+  eligibility,
   provenance = {},
 }) {
   const start = withSydneyOffset(startTime);
@@ -131,6 +157,9 @@ function canonicalAvailability({
       id: venue.id,
       name: venue.name,
       providerVenueId: String(venue.providerVenueId),
+      ...(venue.location ? { location: venue.location } : {}),
+      ...(venue.address ? { address: venue.address } : {}),
+      ...(venue.suburb ? { suburb: venue.suburb } : {}),
     },
     court: {
       id: court.id,
@@ -149,6 +178,7 @@ function canonicalAvailability({
       currency: price.currency ?? 'AUD',
       confidence: price.confidence ?? 'unknown',
     },
+    ...(eligibility ? { eligibility } : {}),
     provenance: {
       source: provenance.source ?? 'live',
       auth: provenance.auth ?? 'public',
@@ -196,6 +226,8 @@ function legacyAvailabilityFromCanonical(canonical, {
     provenance: legacyProvenanceFromCanonical(canonical),
     observedAt: canonical.provenance.observedAt,
   };
+
+  if (canonical.eligibility) legacy.eligibility = canonical.eligibility;
 
   if (canonical.provider === 'susf') {
     legacy.facilityId = canonical.court.providerCourtId;

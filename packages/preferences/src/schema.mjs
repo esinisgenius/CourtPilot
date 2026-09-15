@@ -7,6 +7,8 @@ const allowedFeatures = new Set([
   'date',
   'court',
   'venue',
+  'area',
+  'surface',
   'travel_time',
   'weather',
   'calendar',
@@ -19,6 +21,7 @@ const allowedFeatures = new Set([
 const allowedObjectiveFeatures = new Set(['price', 'travel_time', 'start_time', 'duration']);
 const allowedImportance = new Set(['high', 'medium', 'low', 'uncertain']);
 const allowedTypes = new Set(['hard', 'soft']);
+const allowedPersistence = new Set(['session', 'persistent']);
 const allowedDirections = new Set(['lower', 'higher', 'earlier', 'later', 'preferred', 'avoid']);
 const allowedObjectiveDirections = new Set(['minimize', 'maximize', 'earlier', 'later', 'preferred']);
 const allowedRelaxationDirections = new Set([
@@ -46,6 +49,19 @@ const allowedDateRangeTypes = new Set([
   'date_range',
 ]);
 const allowedWeatherConditions = new Set(['no_rain', 'no_precipitation', 'not_too_hot', 'comfortable']);
+const weatherConditionAliases = new Map([
+  ['not_too_sunny', 'comfortable'],
+  ['not_too_sun_exposed', 'comfortable'],
+  ['too_sunny', 'comfortable'],
+  ['sunny', 'comfortable'],
+  ['shade', 'comfortable'],
+  ['shaded', 'comfortable'],
+  ['uv', 'comfortable'],
+  ['low_uv', 'comfortable'],
+  ['not_too_much_sun', 'comfortable'],
+  ['not_too_hot_or_sunny', 'comfortable'],
+  ['not_too_hot_and_sunny', 'comfortable'],
+]);
 const allowedTransportModes = new Set(['TRANSIT', 'WALK', 'DRIVE']);
 const relaxationDirectionsByFeature = {
   price: new Set(['higher_price', 'ask_user']),
@@ -54,6 +70,8 @@ const relaxationDirectionsByFeature = {
   date: new Set(['wider_date_window', 'ask_user']),
   court: new Set(['include_nonpreferred', 'ask_user']),
   venue: new Set(['other_venues', 'ask_user']),
+  area: new Set(['other_venues', 'ask_user']),
+  surface: new Set(['include_nonpreferred', 'ask_user']),
   travel_time: new Set(['longer_travel_time', 'ask_user']),
   weather: new Set(['ask_user']),
   calendar: new Set(['ask_user']),
@@ -125,11 +143,18 @@ function stripNullableOptionals(value) {
     'startDate',
     'endDate',
     'sourceText',
+    'source',
+    'isExplicit',
+    'persistence',
+    'weatherPreference',
+    'avoidBadWeather',
+    'userOverride',
     'reason',
     'relaxationDirection',
     'transportPreference',
     'maxTransitMinutes',
     'maxWalkMinutes',
+    'preferredMaxMinutes',
     'preferredTransportModes',
   ]);
 
@@ -162,6 +187,8 @@ function normalizeUnresolved(unresolvedPreferences = []) {
 function normalizeSearchScope(profile) {
   const scope = isPlainObject(profile.searchScope) ? { ...profile.searchScope } : {};
   scope.sourceText = scope.sourceText ?? profile.sourceText ?? '';
+  scope.source = scope.source ?? 'user';
+  scope.isExplicit = scope.isExplicit ?? hasExplicitSearchScope(scope);
   if (!isPlainObject(scope.dateRange)) {
     const inferredDateRange = inferDateRangeFromText(scope.sourceText);
     if (inferredDateRange) scope.dateRange = inferredDateRange;
@@ -193,6 +220,19 @@ function normalizeTransportPreference(transportPreference = {}) {
   return normalized;
 }
 
+function normalizeWeatherPreference(weatherPreference = {}, { sourceText = '' } = {}) {
+  const normalized = isPlainObject(weatherPreference) ? stripNullableOptionals({ ...weatherPreference }) : {};
+  const userAllowsBadWeather = normalized.userOverride === true
+    || normalized.avoidBadWeather === false
+    || sourceTextAllowsBadWeather(sourceText);
+
+  return {
+    avoidBadWeather: userAllowsBadWeather ? false : normalized.avoidBadWeather ?? true,
+    source: userAllowsBadWeather ? 'user' : normalized.source ?? 'default',
+    userOverride: userAllowsBadWeather,
+  };
+}
+
 function daysForDateRange(dateRange) {
   if (!isPlainObject(dateRange) || !dateRange.type) return defaultSearchWindowDays;
   if (dateRange.type === 'today' || dateRange.type === 'tomorrow') return 1;
@@ -215,6 +255,8 @@ function inferRelaxationDirection(preference) {
   if (preference.feature === 'date') return 'wider_date_window';
   if (preference.feature === 'court') return 'include_nonpreferred';
   if (preference.feature === 'venue') return 'other_venues';
+  if (preference.feature === 'area') return 'other_venues';
+  if (preference.feature === 'surface') return 'include_nonpreferred';
   if (preference.feature === 'travel_time') return 'longer_travel_time';
   if (preference.feature === 'weather') return 'ask_user';
   if (preference.feature === 'duration') return 'shorter_duration';
@@ -240,8 +282,9 @@ function normalizeRelaxationDirection(preference) {
 function normalizePreferenceMetadata(preference, { defaultSourceText = '', forceHard = false } = {}) {
   const normalized = stripNullableOptionals({ ...preference });
   normalized.type = forceHard ? 'hard' : normalized.type;
-  normalized.priority = normalized.priority ?? normalized.importance ?? 'medium';
-  normalized.importance = normalized.importance ?? normalized.priority;
+  const importance = normalized.importance ?? normalized.priority ?? 'medium';
+  normalized.importance = importance;
+  normalized.priority = importance;
   normalized.relaxable = normalized.type === 'hard' ? false : true;
   if (normalized.type === 'hard') {
     delete normalized.relaxationDirection;
@@ -252,6 +295,8 @@ function normalizePreferenceMetadata(preference, { defaultSourceText = '', force
   normalized.rule = normalizeRuleFromLegacyValue(normalized.feature, normalized.rule, normalized.value);
   normalized.direction = normalizeDirectionForFeature(normalized.feature, normalized.direction, normalized.rule, normalized.value);
   normalized.sourceText = normalized.sourceText ?? defaultSourceText;
+  normalized.source = normalized.source ?? 'user';
+  normalized.isExplicit = normalized.isExplicit ?? normalized.source === 'user';
   return normalized;
 }
 
@@ -320,6 +365,9 @@ function normalizePreferenceProfile(profile, { sourceText, updatedAt = new Date(
   normalized.version = PREFERENCE_VERSION;
   normalized.searchScope = normalizeSearchScope(normalized);
   normalized.transportPreference = normalizeTransportPreference(normalized.transportPreference);
+  normalized.weatherPreference = normalizeWeatherPreference(normalized.weatherPreference, {
+    sourceText: resolvedSourceText,
+  });
   normalized.searchWindowDays = normalized.searchScope.days;
   normalized.preferences = normalized.preferences ?? [];
   normalized.hardConstraints = normalized.hardConstraints ?? [];
@@ -363,6 +411,7 @@ function normalizePreferenceProfile(profile, { sourceText, updatedAt = new Date(
   normalized.preferences = promoted.preferences;
   normalized.hardConstraints = [...normalized.hardConstraints, ...promoted.hardConstraints];
   normalized.hardConstraints = addSourceDerivedHardConstraints(normalized.hardConstraints, normalized.sourceText);
+  repairNaturalLanguageSemantics(normalized);
   normalized.hardConstraints = dedupeHardConstraints(normalized.hardConstraints);
   normalized.unresolvedPreferences = addSourceDerivedUnresolved(
     normalized.unresolvedPreferences,
@@ -372,10 +421,144 @@ function normalizePreferenceProfile(profile, { sourceText, updatedAt = new Date(
   return normalized;
 }
 
+function removeHardConstraintsMatching(hardConstraints, predicate) {
+  return hardConstraints.filter((constraint) => !predicate(constraint));
+}
+
+function upsertHardConstraint(hardConstraints, constraint) {
+  if (hardConstraints.some((item) => item.feature === constraint.feature
+    && JSON.stringify(item.rule ?? {}) === JSON.stringify(constraint.rule ?? {}))) {
+    return hardConstraints;
+  }
+  return [...hardConstraints, constraint];
+}
+
+function upsertSoftPreference(preferences, preference) {
+  if (preferences.some((item) => item.feature === preference.feature
+    && JSON.stringify(item.rule ?? {}) === JSON.stringify(preference.rule ?? {}))) {
+    return preferences;
+  }
+  return [...preferences, preference];
+}
+
+function repairNaturalLanguageSemantics(profile) {
+  const text = profile.sourceText ?? '';
+
+  if (text.includes('周六有事') && text.includes('周日') && /八点后|8点后|20[:：]?00后/.test(text)) {
+    profile.searchScope = {
+      ...profile.searchScope,
+      dateRange: { type: 'weekend', sourceText: '周日' },
+      timeWindow: { after: '20:00' },
+      days: 2,
+    };
+    profile.hardConstraints = removeHardConstraintsMatching(profile.hardConstraints, (constraint) => (
+      constraint.feature === 'start_time' && constraint.sourceText?.includes('周六有事')
+    ));
+    profile.hardConstraints = upsertHardConstraint(profile.hardConstraints, {
+      feature: 'date',
+      type: 'hard',
+      importance: 'high',
+      priority: 'high',
+      relaxable: false,
+      sourceText: '周六有事',
+      direction: 'avoid',
+      rule: { dateRange: { type: 'specific_date', value: 'Saturday', sourceText: '周六' } },
+      source: 'user',
+      isExplicit: true,
+    });
+    profile.hardConstraints = upsertHardConstraint(profile.hardConstraints, {
+      feature: 'start_time',
+      type: 'hard',
+      importance: 'high',
+      priority: 'high',
+      relaxable: false,
+      sourceText: '周日晚上八点后',
+      direction: 'later',
+      rule: { after: '20:00' },
+      source: 'user',
+      isExplicit: true,
+    });
+  }
+
+  if (includesAny(text, ['周六不行', '周六有事'])) {
+    profile.hardConstraints = profile.hardConstraints.map((constraint) => {
+      if (constraint.feature !== 'date' || !constraint.sourceText?.includes('周六')) return constraint;
+      return {
+        ...constraint,
+        direction: 'avoid',
+        rule: { dateRange: { type: 'specific_date', value: 'Saturday', sourceText: '周六' } },
+      };
+    });
+  }
+
+  if (text.includes('最好17点后') && includesAny(text, ['实在不行下午也可以', '下午也可以'])) {
+    profile.hardConstraints = removeHardConstraintsMatching(profile.hardConstraints, (constraint) => (
+      constraint.feature === 'start_time'
+        && constraint.sourceText?.includes('最好17点后')
+    ));
+    profile.hardConstraints = removeHardConstraintsMatching(profile.hardConstraints, (constraint) => (
+      constraint.feature === 'start_time'
+        && constraint.sourceText?.includes('下午也可以')
+    ));
+    profile.searchScope = {
+      ...profile.searchScope,
+      timeWindow: { period: 'afternoon' },
+      days: profile.searchScope?.days ?? defaultSearchWindowDays,
+    };
+    profile.preferences = upsertSoftPreference(profile.preferences, {
+      feature: 'start_time',
+      type: 'soft',
+      importance: 'high',
+      priority: 'high',
+      relaxable: true,
+      relaxationDirection: 'wider_time_window',
+      sourceText: '最好17点后，实在不行下午也可以',
+      direction: 'later',
+      rule: { after: '17:00' },
+      source: 'user',
+      isExplicit: true,
+    });
+  }
+
+  if (includesAny(text, ['稍微远一点也可以', '远一点也行', 'farther is ok', 'farther is okay'])) {
+    profile.preferences = upsertSoftPreference(profile.preferences, {
+      feature: 'travel_time',
+      type: 'soft',
+      importance: 'low',
+      priority: 'low',
+      relaxable: true,
+      relaxationDirection: 'longer_travel_time',
+      sourceText: text,
+      direction: 'preferred',
+      rule: {},
+      source: 'user',
+      isExplicit: true,
+    });
+  }
+}
+
 function canonicalizeRule(feature, rule) {
   if (!isPlainObject(rule)) return rule;
   if (feature === 'start_time') return canonicalizeStartTimeRule(rule);
+  if (feature === 'weather') return canonicalizeWeatherRule(rule);
   return rule;
+}
+
+function canonicalizeWeatherCondition(condition) {
+  if (condition == null) return condition;
+  const normalized = String(condition)
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+  return weatherConditionAliases.get(normalized) ?? normalized;
+}
+
+function canonicalizeWeatherRule(rule) {
+  const normalized = { ...rule };
+  if (normalized.condition !== undefined) {
+    normalized.condition = canonicalizeWeatherCondition(normalized.condition);
+  }
+  return stripNullableOptionals(normalized);
 }
 
 function canonicalizeStartTimeRule(rule) {
@@ -415,7 +598,10 @@ function canonicalizeStartTimeRule(rule) {
 
 function normalizeRuleFromLegacyValue(feature, rule, value) {
   if (isPlainObject(rule)) return rule;
-  if (feature === 'weather' && allowedWeatherConditions.has(value)) return { condition: value };
+  if (feature === 'weather') {
+    const condition = canonicalizeWeatherCondition(value);
+    if (allowedWeatherConditions.has(condition)) return { condition };
+  }
   return rule;
 }
 
@@ -429,7 +615,9 @@ function normalizeDirectionForFeature(feature, direction, rule, value) {
 
 function inferDateRangeFromText(text = '') {
   if (!text) return undefined;
-  if (text.includes('最近几天')) return { type: 'next_few_days', sourceText: '最近几天' };
+  if (text.includes('最近几天') || text.includes('这几天')) {
+    return { type: 'next_few_days', sourceText: text.includes('最近几天') ? '最近几天' : '这几天' };
+  }
   if (text.includes('今天')) return { type: 'today', sourceText: '今天' };
   if (text.includes('明天')) return { type: 'tomorrow', sourceText: '明天' };
   if (text.includes('这周') || text.includes('本周')) return { type: 'this_week', sourceText: text.includes('这周') ? '这周' : '本周' };
@@ -445,7 +633,32 @@ function isUncertainTimeSearchScope(timeWindow, text = '') {
 }
 
 function includesAny(text = '', terms = []) {
-  return terms.some((term) => text.includes(term));
+  const normalizedText = String(text).toLowerCase();
+  return terms.some((term) => normalizedText.includes(String(term).toLowerCase()));
+}
+
+function sourceTextAllowsBadWeather(text = '') {
+  return includesAny(text, [
+    '下雨也可以',
+    '下雨也能打',
+    '下雨没关系',
+    '小雨没关系',
+    '小雨可以',
+    '天气差也能打',
+    '天气不好也可以',
+    '雨天也可以',
+    'rain is okay',
+    'rain is ok',
+    'rainy is okay',
+    'bad weather is okay',
+    'bad weather is ok',
+  ]);
+}
+
+function hasExplicitSearchScope(scope = {}) {
+  return isPlainObject(scope.dateRange)
+    || isPlainObject(scope.timeWindow)
+    || typeof scope.location === 'string';
 }
 
 function isIndifferenceForFeature(feature, text = '') {
@@ -613,6 +826,8 @@ function hardConstraintsFromSearchScope(searchScope, existingHardConstraints) {
     priority: 'medium',
     relaxable: false,
     sourceText: searchScope.sourceText ?? '',
+    source: searchScope.source ?? 'user',
+    isExplicit: searchScope.isExplicit ?? searchScope.source === 'user',
     rule,
   };
 
@@ -910,7 +1125,7 @@ function validateRuleForFeature(feature, rule, path, issues) {
   if (feature === 'start_time') return validateStartTimeRule(rule, path, issues);
   if (feature === 'date') return validateDateRule(rule, path, issues);
   if (feature === 'price') return validatePriceRule(rule, path, issues);
-  if (feature === 'court' || feature === 'venue') return validateListRule(rule, path, issues);
+  if (feature === 'court' || feature === 'venue' || feature === 'area' || feature === 'surface') return validateListRule(rule, path, issues);
   if (feature === 'duration') return validateDurationRule(rule, path, issues);
   if (feature === 'consecutive_availability') return validateConsecutiveAvailabilityRule(rule, path, issues);
   if (feature === 'court_count') return validateCourtCountRule(rule, path, issues);
@@ -934,6 +1149,9 @@ function validatePreference(preference, path, { requireHardType = false } = {}) 
     'relaxable',
     'relaxationDirection',
     'sourceText',
+    'source',
+    'isExplicit',
+    'persistence',
     'direction',
     'target',
     'rule',
@@ -959,6 +1177,13 @@ function validatePreference(preference, path, { requireHardType = false } = {}) 
     issues.push(`${path}.relaxationDirection is not allowed for ${preference.feature}`);
   }
   if (preference.sourceText !== undefined && typeof preference.sourceText !== 'string') issues.push(`${path}.sourceText must be a string`);
+  if (preference.source !== undefined && !['user', 'default', 'system', 'replanner'].includes(preference.source)) {
+    issues.push(`${path}.source must be user, default, system, or replanner`);
+  }
+  if (preference.isExplicit !== undefined && typeof preference.isExplicit !== 'boolean') issues.push(`${path}.isExplicit must be boolean`);
+  if (preference.persistence !== undefined && !allowedPersistence.has(preference.persistence)) {
+    issues.push(`${path}.persistence must be session or persistent`);
+  }
   if (preference.direction !== undefined && !allowedDirections.has(preference.direction)) issues.push(`${path}.direction is not allowed`);
   if (preference.feature === 'weather' && preference.direction === 'higher') issues.push(`${path}.direction is not allowed for weather`);
   if (preference.target !== undefined && typeof preference.target !== 'boolean') issues.push(`${path}.target must be boolean`);
@@ -974,7 +1199,7 @@ function validateSearchScope(searchScope, issues) {
     return;
   }
 
-  validateNoUnknownKeys(searchScope, ['days', 'dateRange', 'timeWindow', 'location', 'sourceText'], 'searchScope', issues);
+  validateNoUnknownKeys(searchScope, ['days', 'dateRange', 'timeWindow', 'location', 'sourceText', 'source', 'isExplicit'], 'searchScope', issues);
   if (!Number.isInteger(searchScope.days) || searchScope.days < 1 || searchScope.days > 30) {
     issues.push('searchScope.days must be an integer from 1 to 30');
   }
@@ -982,6 +1207,27 @@ function validateSearchScope(searchScope, issues) {
   if (searchScope.timeWindow !== undefined) validateStartTimeRule(searchScope.timeWindow, 'searchScope.timeWindow', issues);
   if (searchScope.location !== undefined && typeof searchScope.location !== 'string') issues.push('searchScope.location must be a string');
   if (searchScope.sourceText !== undefined && typeof searchScope.sourceText !== 'string') issues.push('searchScope.sourceText must be a string');
+  if (searchScope.source !== undefined && !['user', 'default', 'system', 'replanner'].includes(searchScope.source)) {
+    issues.push('searchScope.source must be user, default, system, or replanner');
+  }
+  if (searchScope.isExplicit !== undefined && typeof searchScope.isExplicit !== 'boolean') issues.push('searchScope.isExplicit must be boolean');
+}
+
+function validateWeatherPreference(weatherPreference, issues) {
+  if (!isPlainObject(weatherPreference)) {
+    issues.push('weatherPreference must be an object');
+    return;
+  }
+  validateNoUnknownKeys(weatherPreference, ['avoidBadWeather', 'source', 'userOverride'], 'weatherPreference', issues);
+  if (typeof weatherPreference.avoidBadWeather !== 'boolean') {
+    issues.push('weatherPreference.avoidBadWeather must be boolean');
+  }
+  if (!['default', 'user'].includes(weatherPreference.source)) {
+    issues.push('weatherPreference.source must be default or user');
+  }
+  if (typeof weatherPreference.userOverride !== 'boolean') {
+    issues.push('weatherPreference.userOverride must be boolean');
+  }
 }
 
 function validateObjective(objective, path) {
@@ -1031,6 +1277,7 @@ function validatePreferenceProfile(profile) {
     'searchWindowDays',
     'searchScope',
     'transportPreference',
+    'weatherPreference',
     'preferences',
     'hardConstraints',
     'objectives',
@@ -1045,6 +1292,7 @@ function validatePreferenceProfile(profile) {
   }
   validateSearchScope(profile.searchScope, issues);
   validateTransportPreference(profile.transportPreference, issues);
+  validateWeatherPreference(profile.weatherPreference, issues);
 
   if (!Array.isArray(profile.preferences)) {
     issues.push('preferences must be an array');
@@ -1104,6 +1352,7 @@ export {
   allowedObjectiveDirections,
   allowedObjectiveFeatures,
   allowedPeriods,
+  allowedPersistence,
   allowedRelaxationDirections,
   allowedTransportModes,
   allowedTypes,

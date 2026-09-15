@@ -252,7 +252,7 @@ function evaluateCandidateSet({
     .some((preference) => preference.priority === 'high' && ['severe', 'unknown'].includes(preference.severity));
 
   if (candidates.length < minCandidates) reasons.push('candidate_count_below_minimum');
-  if (hardFailures.length > 0) reasons.push('hard_constraints_failed');
+  if (candidates.length === 0 && hardFailures.length > 0) reasons.push('hard_constraints_failed');
   if (observationIssues.length > 0) reasons.push('factual_observations_insufficient');
   if (severeHighViolations.length >= 2 || highViolations.length >= 2) {
     reasons.push('top_candidate_multiple_high_priority_soft_violations');

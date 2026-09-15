@@ -1,0 +1,659 @@
+{
+  "summary": {
+    "generatedAt": "2026-09-14T08:32:25.880Z",
+    "total": 8,
+    "passCount": 7,
+    "failCount": 1,
+    "passRate": 0.875
+  },
+  "results": [
+    {
+      "id": "parser-01-sunday-after-8",
+      "input": "周六有事，周日晚上八点后",
+      "hardConstraints": [
+        {
+          "feature": "date",
+          "type": "hard",
+          "importance": "high",
+          "priority": "high",
+          "relaxable": false,
+          "sourceText": "周六有事，周日晚上八点后",
+          "direction": "avoid",
+          "target": false,
+          "value": "Saturday",
+          "rule": {
+            "dateRange": {
+              "type": "specific_date",
+              "value": "Saturday",
+              "sourceText": "周六"
+            }
+          },
+          "source": "user",
+          "isExplicit": true
+        },
+        {
+          "feature": "start_time",
+          "type": "hard",
+          "importance": "high",
+          "priority": "high",
+          "relaxable": false,
+          "sourceText": "周日晚上八点后",
+          "direction": "later",
+          "rule": {
+            "after": "20:00"
+          },
+          "source": "user",
+          "isExplicit": true
+        }
+      ],
+      "softPreferences": [],
+      "objectives": [],
+      "dateTimeSemantics": {
+        "searchScope": {
+          "days": 2,
+          "dateRange": {
+            "type": "weekend",
+            "sourceText": "周日"
+          },
+          "timeWindow": {
+            "after": "20:00"
+          },
+          "sourceText": "周六有事，周日晚上八点后",
+          "source": "user",
+          "isExplicit": true
+        },
+        "dateHard": [
+          {
+            "feature": "date",
+            "type": "hard",
+            "importance": "high",
+            "priority": "high",
+            "relaxable": false,
+            "sourceText": "周六有事，周日晚上八点后",
+            "direction": "avoid",
+            "target": false,
+            "value": "Saturday",
+            "rule": {
+              "dateRange": {
+                "type": "specific_date",
+                "value": "Saturday",
+                "sourceText": "周六"
+              }
+            },
+            "source": "user",
+            "isExplicit": true
+          }
+        ],
+        "timeHard": [
+          {
+            "feature": "start_time",
+            "type": "hard",
+            "importance": "high",
+            "priority": "high",
+            "relaxable": false,
+            "sourceText": "周日晚上八点后",
+            "direction": "later",
+            "rule": {
+              "after": "20:00"
+            },
+            "source": "user",
+            "isExplicit": true
+          }
+        ]
+      },
+      "unresolvedPreferences": [],
+      "expected": "parser-01-sunday-after-8",
+      "actual": {
+        "hardConstraints": [
+          {
+            "feature": "date",
+            "type": "hard",
+            "importance": "high",
+            "priority": "high",
+            "relaxable": false,
+            "sourceText": "周六有事，周日晚上八点后",
+            "direction": "avoid",
+            "target": false,
+            "value": "Saturday",
+            "rule": {
+              "dateRange": {
+                "type": "specific_date",
+                "value": "Saturday",
+                "sourceText": "周六"
+              }
+            },
+            "source": "user",
+            "isExplicit": true
+          },
+          {
+            "feature": "start_time",
+            "type": "hard",
+            "importance": "high",
+            "priority": "high",
+            "relaxable": false,
+            "sourceText": "周日晚上八点后",
+            "direction": "later",
+            "rule": {
+              "after": "20:00"
+            },
+            "source": "user",
+            "isExplicit": true
+          }
+        ],
+        "softPreferences": [],
+        "objectives": [],
+        "dateTimeSemantics": {
+          "searchScope": {
+            "days": 2,
+            "dateRange": {
+              "type": "weekend",
+              "sourceText": "周日"
+            },
+            "timeWindow": {
+              "after": "20:00"
+            },
+            "sourceText": "周六有事，周日晚上八点后",
+            "source": "user",
+            "isExplicit": true
+          },
+          "dateHard": [
+            {
+              "feature": "date",
+              "type": "hard",
+              "importance": "high",
+              "priority": "high",
+              "relaxable": false,
+              "sourceText": "周六有事，周日晚上八点后",
+              "direction": "avoid",
+              "target": false,
+              "value": "Saturday",
+              "rule": {
+                "dateRange": {
+                  "type": "specific_date",
+                  "value": "Saturday",
+                  "sourceText": "周六"
+                }
+              },
+              "source": "user",
+              "isExplicit": true
+            }
+          ],
+          "timeHard": [
+            {
+              "feature": "start_time",
+              "type": "hard",
+              "importance": "high",
+              "priority": "high",
+              "relaxable": false,
+              "sourceText": "周日晚上八点后",
+              "direction": "later",
+              "rule": {
+                "after": "20:00"
+              },
+              "source": "user",
+              "isExplicit": true
+            }
+          ]
+        },
+        "unresolvedPreferences": []
+      },
+      "pass": true,
+      "failureRootCause": null
+    },
+    {
+      "id": "parser-02-next-few-days-not-saturday",
+      "input": "这几天都行，但周六不行",
+      "hardConstraints": [],
+      "softPreferences": [],
+      "objectives": [],
+      "dateTimeSemantics": {
+        "searchScope": {
+          "days": 3,
+          "sourceText": "这几天都行，但周六不行",
+          "source": "user",
+          "isExplicit": false,
+          "dateRange": {
+            "type": "next_few_days",
+            "sourceText": "这几天"
+          }
+        },
+        "dateHard": [],
+        "timeHard": []
+      },
+      "unresolvedPreferences": [],
+      "expected": "parser-02-next-few-days-not-saturday",
+      "actual": {
+        "hardConstraints": [],
+        "softPreferences": [],
+        "objectives": [],
+        "dateTimeSemantics": {
+          "searchScope": {
+            "days": 3,
+            "sourceText": "这几天都行，但周六不行",
+            "source": "user",
+            "isExplicit": false,
+            "dateRange": {
+              "type": "next_few_days",
+              "sourceText": "这几天"
+            }
+          },
+          "dateHard": [],
+          "timeHard": []
+        },
+        "unresolvedPreferences": []
+      },
+      "pass": false,
+      "failureRootCause": "Parser did not structure this natural-language constraint with the expected hard/soft/date-time semantics."
+    },
+    {
+      "id": "parser-03-after-17-soft-afternoon-fallback",
+      "input": "最好17点后，实在不行下午也可以",
+      "hardConstraints": [],
+      "softPreferences": [
+        {
+          "feature": "start_time",
+          "type": "soft",
+          "importance": "medium",
+          "priority": "medium",
+          "relaxable": true,
+          "relaxationDirection": "wider_time_window",
+          "sourceText": "最好17点后，实在不行下午也可以",
+          "direction": "later",
+          "rule": {
+            "after": "17:00"
+          },
+          "source": "user",
+          "isExplicit": true
+        }
+      ],
+      "objectives": [],
+      "dateTimeSemantics": {
+        "searchScope": {
+          "days": 7,
+          "sourceText": "最好17点后，实在不行下午也可以",
+          "source": "user",
+          "isExplicit": false,
+          "timeWindow": {
+            "period": "afternoon"
+          }
+        },
+        "dateHard": [],
+        "timeHard": []
+      },
+      "unresolvedPreferences": [],
+      "expected": "parser-03-after-17-soft-afternoon-fallback",
+      "actual": {
+        "hardConstraints": [],
+        "softPreferences": [
+          {
+            "feature": "start_time",
+            "type": "soft",
+            "importance": "medium",
+            "priority": "medium",
+            "relaxable": true,
+            "relaxationDirection": "wider_time_window",
+            "sourceText": "最好17点后，实在不行下午也可以",
+            "direction": "later",
+            "rule": {
+              "after": "17:00"
+            },
+            "source": "user",
+            "isExplicit": true
+          }
+        ],
+        "objectives": [],
+        "dateTimeSemantics": {
+          "searchScope": {
+            "days": 7,
+            "sourceText": "最好17点后，实在不行下午也可以",
+            "source": "user",
+            "isExplicit": false,
+            "timeWindow": {
+              "period": "afternoon"
+            }
+          },
+          "dateHard": [],
+          "timeHard": []
+        },
+        "unresolvedPreferences": []
+      },
+      "pass": true,
+      "failureRootCause": null
+    },
+    {
+      "id": "parser-04-must-two-hours",
+      "input": "必须连续两小时",
+      "hardConstraints": [
+        {
+          "feature": "consecutive_availability",
+          "type": "hard",
+          "importance": "high",
+          "priority": "high",
+          "relaxable": false,
+          "sourceText": "必须连续两小时",
+          "target": true,
+          "rule": {
+            "minMinutes": 120
+          },
+          "source": "user",
+          "isExplicit": true
+        }
+      ],
+      "softPreferences": [],
+      "objectives": [],
+      "dateTimeSemantics": {
+        "searchScope": {
+          "days": 7,
+          "sourceText": "必须连续两小时",
+          "source": "user",
+          "isExplicit": false
+        },
+        "dateHard": [],
+        "timeHard": []
+      },
+      "unresolvedPreferences": [],
+      "expected": "parser-04-must-two-hours",
+      "actual": {
+        "hardConstraints": [
+          {
+            "feature": "consecutive_availability",
+            "type": "hard",
+            "importance": "high",
+            "priority": "high",
+            "relaxable": false,
+            "sourceText": "必须连续两小时",
+            "target": true,
+            "rule": {
+              "minMinutes": 120
+            },
+            "source": "user",
+            "isExplicit": true
+          }
+        ],
+        "softPreferences": [],
+        "objectives": [],
+        "dateTimeSemantics": {
+          "searchScope": {
+            "days": 7,
+            "sourceText": "必须连续两小时",
+            "source": "user",
+            "isExplicit": false
+          },
+          "dateHard": [],
+          "timeHard": []
+        },
+        "unresolvedPreferences": []
+      },
+      "pass": true,
+      "failureRootCause": null
+    },
+    {
+      "id": "parser-05-cheap-around-25",
+      "input": "便宜一点，25刀左右",
+      "hardConstraints": [],
+      "softPreferences": [
+        {
+          "feature": "price",
+          "type": "soft",
+          "importance": "medium",
+          "priority": "medium",
+          "relaxable": true,
+          "relaxationDirection": "higher_price",
+          "sourceText": "便宜一点，25刀左右",
+          "direction": "lower",
+          "value": "25",
+          "rule": {
+            "max": 25
+          },
+          "source": "user",
+          "isExplicit": true
+        }
+      ],
+      "objectives": [],
+      "dateTimeSemantics": {
+        "searchScope": {
+          "days": 7,
+          "sourceText": "便宜一点，25刀左右",
+          "source": "user",
+          "isExplicit": false
+        },
+        "dateHard": [],
+        "timeHard": []
+      },
+      "unresolvedPreferences": [],
+      "expected": "parser-05-cheap-around-25",
+      "actual": {
+        "hardConstraints": [],
+        "softPreferences": [
+          {
+            "feature": "price",
+            "type": "soft",
+            "importance": "medium",
+            "priority": "medium",
+            "relaxable": true,
+            "relaxationDirection": "higher_price",
+            "sourceText": "便宜一点，25刀左右",
+            "direction": "lower",
+            "value": "25",
+            "rule": {
+              "max": 25
+            },
+            "source": "user",
+            "isExplicit": true
+          }
+        ],
+        "objectives": [],
+        "dateTimeSemantics": {
+          "searchScope": {
+            "days": 7,
+            "sourceText": "便宜一点，25刀左右",
+            "source": "user",
+            "isExplicit": false
+          },
+          "dateHard": [],
+          "timeHard": []
+        },
+        "unresolvedPreferences": []
+      },
+      "pass": true,
+      "failureRootCause": null
+    },
+    {
+      "id": "parser-06-not-too-hot",
+      "input": "不要太热",
+      "hardConstraints": [],
+      "softPreferences": [
+        {
+          "feature": "weather",
+          "type": "soft",
+          "importance": "medium",
+          "priority": "medium",
+          "relaxable": true,
+          "relaxationDirection": "ask_user",
+          "sourceText": "不要太热",
+          "direction": "avoid",
+          "rule": {
+            "condition": "not_too_hot"
+          },
+          "source": "user",
+          "isExplicit": true
+        }
+      ],
+      "objectives": [],
+      "dateTimeSemantics": {
+        "searchScope": {
+          "days": 7,
+          "sourceText": "不要太热",
+          "source": "user",
+          "isExplicit": false
+        },
+        "dateHard": [],
+        "timeHard": []
+      },
+      "unresolvedPreferences": [],
+      "expected": "parser-06-not-too-hot",
+      "actual": {
+        "hardConstraints": [],
+        "softPreferences": [
+          {
+            "feature": "weather",
+            "type": "soft",
+            "importance": "medium",
+            "priority": "medium",
+            "relaxable": true,
+            "relaxationDirection": "ask_user",
+            "sourceText": "不要太热",
+            "direction": "avoid",
+            "rule": {
+              "condition": "not_too_hot"
+            },
+            "source": "user",
+            "isExplicit": true
+          }
+        ],
+        "objectives": [],
+        "dateTimeSemantics": {
+          "searchScope": {
+            "days": 7,
+            "sourceText": "不要太热",
+            "source": "user",
+            "isExplicit": false
+          },
+          "dateHard": [],
+          "timeHard": []
+        },
+        "unresolvedPreferences": []
+      },
+      "pass": true,
+      "failureRootCause": null
+    },
+    {
+      "id": "parser-07-no-rain-hard",
+      "input": "下雨就不打",
+      "hardConstraints": [
+        {
+          "feature": "weather",
+          "type": "hard",
+          "importance": "high",
+          "priority": "high",
+          "relaxable": false,
+          "sourceText": "下雨就不打",
+          "direction": "avoid",
+          "rule": {
+            "condition": "no_rain"
+          },
+          "source": "user",
+          "isExplicit": true
+        }
+      ],
+      "softPreferences": [],
+      "objectives": [],
+      "dateTimeSemantics": {
+        "searchScope": {
+          "days": 7,
+          "sourceText": "下雨就不打",
+          "source": "user",
+          "isExplicit": false
+        },
+        "dateHard": [],
+        "timeHard": []
+      },
+      "unresolvedPreferences": [],
+      "expected": "parser-07-no-rain-hard",
+      "actual": {
+        "hardConstraints": [
+          {
+            "feature": "weather",
+            "type": "hard",
+            "importance": "high",
+            "priority": "high",
+            "relaxable": false,
+            "sourceText": "下雨就不打",
+            "direction": "avoid",
+            "rule": {
+              "condition": "no_rain"
+            },
+            "source": "user",
+            "isExplicit": true
+          }
+        ],
+        "softPreferences": [],
+        "objectives": [],
+        "dateTimeSemantics": {
+          "searchScope": {
+            "days": 7,
+            "sourceText": "下雨就不打",
+            "source": "user",
+            "isExplicit": false
+          },
+          "dateHard": [],
+          "timeHard": []
+        },
+        "unresolvedPreferences": []
+      },
+      "pass": true,
+      "failureRootCause": null
+    },
+    {
+      "id": "parser-08-farther-ok",
+      "input": "稍微远一点也可以",
+      "hardConstraints": [],
+      "softPreferences": [
+        {
+          "feature": "travel_time",
+          "type": "soft",
+          "importance": "low",
+          "priority": "low",
+          "relaxable": true,
+          "relaxationDirection": "longer_travel_time",
+          "sourceText": "稍微远一点也可以",
+          "source": "user",
+          "isExplicit": true
+        }
+      ],
+      "objectives": [],
+      "dateTimeSemantics": {
+        "searchScope": {
+          "days": 7,
+          "sourceText": "稍微远一点也可以",
+          "source": "user",
+          "isExplicit": false
+        },
+        "dateHard": [],
+        "timeHard": []
+      },
+      "unresolvedPreferences": [],
+      "expected": "parser-08-farther-ok",
+      "actual": {
+        "hardConstraints": [],
+        "softPreferences": [
+          {
+            "feature": "travel_time",
+            "type": "soft",
+            "importance": "low",
+            "priority": "low",
+            "relaxable": true,
+            "relaxationDirection": "longer_travel_time",
+            "sourceText": "稍微远一点也可以",
+            "source": "user",
+            "isExplicit": true
+          }
+        ],
+        "objectives": [],
+        "dateTimeSemantics": {
+          "searchScope": {
+            "days": 7,
+            "sourceText": "稍微远一点也可以",
+            "source": "user",
+            "isExplicit": false
+          },
+          "dateHard": [],
+          "timeHard": []
+        },
+        "unresolvedPreferences": []
+      },
+      "pass": true,
+      "failureRootCause": null
+    }
+  ]
+}

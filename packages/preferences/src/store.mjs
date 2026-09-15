@@ -13,13 +13,38 @@ class PreferenceStoreError extends Error {
   }
 }
 
-async function loadPreferenceProfile({ path = DEFAULT_PREFERENCE_PATH } = {}) {
+function createEmptyPreferenceProfile({ now = new Date() } = {}) {
+  const timestamp = now.toISOString();
+  const profile = normalizePreferenceProfile({
+    version: 2,
+    searchWindowDays: 7,
+    searchScope: {
+      days: 7,
+      sourceText: '',
+      source: 'default',
+      isExplicit: false,
+    },
+    transportPreference: {},
+    preferences: [],
+    hardConstraints: [],
+    objectives: [],
+    unresolvedPreferences: [],
+    sourceText: '',
+    updatedAt: timestamp,
+  }, {
+    sourceText: '',
+    updatedAt: timestamp,
+  });
+  return validatePreferenceProfile(profile);
+}
+
+async function loadPreferenceProfile({ path = DEFAULT_PREFERENCE_PATH, now = new Date() } = {}) {
   let text;
   try {
     text = await readFile(path, 'utf8');
   } catch (error) {
     if (error.code === 'ENOENT') {
-      throw new PreferenceStoreError('PREFERENCE_PROFILE_NOT_FOUND', 'No saved preference profile. Run npm run preference:set -- "your preference" first.');
+      return createEmptyPreferenceProfile({ now });
     }
     throw error;
   }
@@ -54,6 +79,7 @@ async function savePreferenceProfile(profile, {
 export {
   DEFAULT_PREFERENCE_PATH,
   PreferenceStoreError,
+  createEmptyPreferenceProfile,
   loadPreferenceProfile,
   savePreferenceProfile,
 };

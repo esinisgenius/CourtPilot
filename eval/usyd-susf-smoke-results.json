@@ -1,0 +1,62 @@
+{
+  "generatedAt": "2026-09-14T07:59:07.673Z",
+  "cachePath": "/Users/liangyingxin/Desktop/TennisAgent/.cache/susf-metadata.json",
+  "results": [
+    {
+      "label": "cold",
+      "httpStatus": 200,
+      "ok": true,
+      "internalStatus": "ASKING_USER",
+      "userStatus": {
+        "code": "NO_PROVIDER_COVERAGE",
+        "title": "No connected courts near that location",
+        "message": "I understood the location, but none of the connected booking providers cover nearby tennis venues yet.",
+        "severity": "needs_input"
+      },
+      "latencyMs": 3467,
+      "candidates": 0,
+      "providerObservations": [],
+      "activeProviders": []
+    },
+    {
+      "label": "warm",
+      "httpStatus": 200,
+      "ok": true,
+      "internalStatus": "ASKING_USER",
+      "userStatus": {
+        "code": "RECOMMENDATIONS_READY",
+        "title": "Found court recommendations",
+        "message": "These options passed the hard filters and are ranked by your preferences.",
+        "severity": "success"
+      },
+      "latencyMs": 53971,
+      "candidates": 6,
+      "providerObservations": [
+        {
+          "providerId": "susf",
+          "status": "success",
+          "candidateCount": 790,
+          "error": null,
+          "startedAt": "2026-09-14T07:58:17.365Z",
+          "completedAt": "2026-09-14T07:59:03.248Z",
+          "durationMs": 45883,
+          "observedAt": "2026-09-14T07:59:03.248Z"
+        },
+        {
+          "providerId": "intrac",
+          "status": "success",
+          "candidateCount": 6,
+          "error": null,
+          "startedAt": "2026-09-14T07:59:03.248Z",
+          "completedAt": "2026-09-14T07:59:03.617Z",
+          "durationMs": 369,
+          "observedAt": "2026-09-14T07:59:03.617Z"
+        }
+      ],
+      "activeProviders": [
+        "susf",
+        "intrac"
+      ]
+    }
+  ]
+}

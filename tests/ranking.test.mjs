@@ -15,7 +15,9 @@ function candidate({
   walkMinutes = 18,
   driveMinutes = 10,
   nextHourFree = false,
-  startTime = '2026-09-10T07:00:00.000Z',
+  startTime = '2026-09-20T07:00:00.000Z',
+  venue = 'SUSF',
+  distanceKm = null,
 }) {
   const accessibility = {
     walk: {
@@ -37,7 +39,7 @@ function candidate({
 
   return {
     id,
-    venue: 'SUSF',
+    venue,
     court: `Court ${id}`,
     startTime,
     durationMinutes: 60,
@@ -46,8 +48,9 @@ function candidate({
       nextHourFree,
       price,
       priceOptions: [],
-      localDate: '2026-09-10',
-      localTime: '17:00',
+      distanceKm,
+      localDate: '2026-09-20',
+      localTime: startTime.slice(11, 16),
       accessibility,
       calendar: { free: true, source: 'synthetic' },
       weather: { forecastAvailable: true, precipitationProbability: 0, precipitationMm: 0 },
@@ -246,6 +249,84 @@ test('fallback ranking is deterministic and repeatable', () => {
   });
 
   assert.deepEqual(first, second);
+});
+
+test('fallback ranking prefers closer venues for explicit location searches', () => {
+  const result = fallbackRankCandidates({
+    preferenceProfile: {
+      ...softTradeoffProfile(),
+      searchScope: { locationSource: 'explicit' },
+      preferences: [],
+      objectives: [],
+      transportPreference: {},
+    },
+    candidates: [
+      candidate({ id: 'A', venue: 'Aardvark Farther Tennis', distanceKm: 2.5 }),
+      candidate({ id: 'B', venue: 'Zebra Closer Tennis', distanceKm: 1.0 }),
+    ],
+  });
+
+  assert.deepEqual(result.rankedCandidates.map((item) => item.candidateId), ['B', 'A']);
+});
+
+test('fallback ranking ignores distance metadata when location is unspecified', () => {
+  const result = fallbackRankCandidates({
+    preferenceProfile: {
+      ...softTradeoffProfile(),
+      preferences: [],
+      objectives: [],
+      transportPreference: {},
+    },
+    candidates: [
+      candidate({ id: 'A', venue: 'Aardvark Farther Tennis', distanceKm: 2.5 }),
+      candidate({ id: 'B', venue: 'Zebra Closer Tennis', distanceKm: 1.0 }),
+    ],
+  });
+
+  assert.deepEqual(result.rankedCandidates.map((item) => item.candidateId), ['A', 'B']);
+});
+
+test('fallback ranking lowers early-morning priority when no explicit time is given', () => {
+  const result = fallbackRankCandidates({
+    preferenceProfile: {
+      ...softTradeoffProfile(),
+      preferences: [],
+      objectives: [],
+      transportPreference: {},
+    },
+    candidates: [
+      candidate({ id: 'early', startTime: '2026-09-16T07:00:00+10:00' }),
+      candidate({ id: 'midday', startTime: '2026-09-16T10:00:00+10:00' }),
+    ],
+  });
+
+  assert.deepEqual(result.rankedCandidates.map((item) => item.candidateId), ['midday', 'early']);
+});
+
+test('fallback ranking preserves explicit time preference over default time utility', () => {
+  const result = fallbackRankCandidates({
+    preferenceProfile: {
+      ...softTradeoffProfile(),
+      preferences: [{
+        feature: 'start_time',
+        type: 'soft',
+        priority: 'high',
+        importance: 'high',
+        rule: { after: '07:00' },
+      }],
+      objectives: [],
+      transportPreference: {},
+      searchScope: {
+        temporalWindow: { timeStart: '07:00', timeEnd: null },
+      },
+    },
+    candidates: [
+      candidate({ id: 'seven', startTime: '2026-09-16T07:00:00+10:00' }),
+      candidate({ id: 'ten', startTime: '2026-09-16T10:00:00+10:00' }),
+    ],
+  });
+
+  assert.deepEqual(result.rankedCandidates.map((item) => item.candidateId), ['seven', 'ten']);
 });
 
 test('ranker output validator rejects facts outside the candidate set', () => {

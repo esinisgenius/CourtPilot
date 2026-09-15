@@ -44,9 +44,10 @@ function parseBookableVenueUrl(rawUrl) {
   };
 }
 
-async function fetchJson(url, { fetchImpl = fetch } = {}) {
+async function fetchJson(url, { fetchImpl = fetch, signal = null } = {}) {
   const response = await fetchImpl(url, {
     method: 'GET',
+    signal,
     headers: {
       accept: 'application/json, text/plain, */*',
     },
@@ -108,6 +109,8 @@ function normalizeVenueConfig(config) {
     provider: 'bookable',
     suburb: config.suburb ?? null,
     council: config.council ?? null,
+    location: config.location ?? null,
+    address: config.address ?? null,
     name: config.name ?? parsed.slug ?? `Bookable venue ${parsed.venueId}`,
     organisationId: config.organisationId ?? 1,
     enabled: config.enabled !== false,
@@ -149,6 +152,9 @@ function normalizeResources(rawBookables, venue) {
       venue: venue.name,
       venueRecordId: venue.id,
       council: venue.council,
+      suburb: venue.suburb,
+      location: venue.location,
+      address: venue.address,
       venueId: venue.venueId,
       resourceId: bookable.BookableID,
       itemId: bookable.ItemID ?? null,
@@ -283,6 +289,9 @@ function buildSlotsForResource(resource, openingHours, bookings, {
           id: resource.venueRecordId ?? `bookable-venue-${resource.venueId}`,
           name: resource.venue,
           providerVenueId: resource.venueId,
+          suburb: resource.suburb,
+          ...(resource.location ? { location: resource.location } : {}),
+          ...(resource.address ? { address: resource.address } : {}),
         },
         court: {
           id: `bookable-court-${resource.resourceId}`,
@@ -293,6 +302,12 @@ function buildSlotsForResource(resource, openingHours, bookings, {
         startTime: localDateTime(hours.date, start),
         durationMinutes,
         priceOptions: resource.priceOptions,
+        eligibility: {
+          sport: {
+            type: 'tennis',
+            proof: 'provider_resource',
+          },
+        },
         provenance: {
           source: 'live',
           auth: 'public',
@@ -355,6 +370,7 @@ async function readVenueAvailability(config, {
   durationMinutes = 60,
   fetchImpl = fetch,
   observedAt = new Date().toISOString(),
+  signal = null,
 } = {}) {
   if (!Number.isInteger(days) || days < 1) throw new Error('days must be a positive integer');
   if (!Number.isInteger(durationMinutes) || durationMinutes < 1) throw new Error('durationMinutes must be a positive integer');
@@ -369,10 +385,10 @@ async function readVenueAvailability(config, {
   });
 
   const [rawBookables, rawBookings, rawOpeningHours, rawSettings] = await Promise.all([
-    fetchJson(urls.bookables, { fetchImpl }),
-    fetchJson(urls.bookings, { fetchImpl }),
-    fetchJson(urls.openingHours, { fetchImpl }),
-    fetchJson(urls.settings, { fetchImpl }),
+    fetchJson(urls.bookables, { fetchImpl, signal }),
+    fetchJson(urls.bookings, { fetchImpl, signal }),
+    fetchJson(urls.openingHours, { fetchImpl, signal }),
+    fetchJson(urls.settings, { fetchImpl, signal }),
   ]);
 
   return normalizeAvailability({
@@ -392,6 +408,7 @@ async function readAvailability({
   days = 7,
   durationMinutes = 60,
   fetchImpl = fetch,
+  signal = null,
 } = {}) {
   const observedAt = new Date().toISOString();
   const results = [];
@@ -405,6 +422,7 @@ async function readAvailability({
         durationMinutes,
         fetchImpl,
         observedAt,
+        signal,
       }));
     } catch (error) {
       failures.push({

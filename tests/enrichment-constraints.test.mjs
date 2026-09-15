@@ -75,6 +75,28 @@ function withWeather(baseCandidate, weather) {
   };
 }
 
+function rainyWeather(overrides = {}) {
+  return {
+    forecastAvailable: true,
+    condition: 'rain',
+    precipitationProbability: 72,
+    precipitationMm: 1.2,
+    weatherCode: '61',
+    ...overrides,
+  };
+}
+
+function dryWeather(overrides = {}) {
+  return {
+    forecastAvailable: true,
+    condition: 'clear',
+    precipitationProbability: 10,
+    precipitationMm: 0,
+    weatherCode: '0',
+    ...overrides,
+  };
+}
+
 function withAccessibility(baseCandidate, accessibility) {
   return {
     ...baseCandidate,
@@ -314,6 +336,23 @@ test('calendar free candidate is accepted when no other hard constraint fails', 
   assert.equal(result.rejected.length, 0);
 });
 
+test('past availability is rejected before ranking for every provider', () => {
+  const [past, future] = attachCalendar([
+    candidate('past', '2026-09-14T10:00:00+10:00'),
+    candidate('future', '2026-09-14T20:00:00+10:00'),
+  ], []);
+
+  const result = applyHardConstraints({
+    candidates: [past, future],
+    preferenceProfile: profile(),
+    now: new Date('2026-09-14T18:53:00+10:00'),
+  });
+
+  assert.deepEqual(result.accepted.map((entry) => entry.id), ['future']);
+  assert.equal(result.rejected[0].candidate.id, 'past');
+  assert.equal(result.rejected[0].reasons[0].reason, 'availability_start_in_past');
+});
+
 test('hard start_time constraint rejects before ranking', () => {
   const preferenceProfile = normalizePreferenceProfile({
     version: 2,
@@ -373,21 +412,205 @@ test('weather hard constraint rejects precipitation', () => {
   assert.equal(result.rejected[0].reasons[0].reason, 'weather_precipitation');
 });
 
-test('weather soft preference does not reject candidates in hard filtering', () => {
+test('weather hard no_rain rule rejects rain-like condition even without measured precipitation', () => {
   const current = attachCalendar([
-    withWeather(candidate('rain'), {
-      forecastAvailable: true,
-      precipitationMm: 1.2,
-      precipitationProbability: 90,
+    withWeather(candidate('rain-condition'), rainyWeather({
+      precipitationMm: 0,
+      precipitationProbability: 10,
+    })),
+  ], [])[0];
+  const preferenceProfile = normalizePreferenceProfile({
+    version: 2,
+    searchWindowDays: 7,
+    preferences: [],
+    hardConstraints: [{
+      feature: 'weather',
+      type: 'hard',
+      importance: 'high',
+      priority: 'high',
+      rule: { condition: 'no_rain' },
+      sourceText: '别下雨就行',
+    }],
+    objectives: [],
+    unresolvedPreferences: [],
+    sourceText: '别下雨就行',
+    updatedAt: '2026-09-03T00:00:00.000Z',
+  }, {
+    updatedAt: '2026-09-03T00:00:00.000Z',
+  });
+
+  const result = applyHardConstraints({
+    candidates: [current],
+    preferenceProfile,
+  });
+
+  assert.equal(result.accepted.length, 0);
+  assert.equal(result.rejected[0].reasons[0].reason, 'weather_bad_condition');
+});
+
+test('default weather policy rejects rainy outdoor candidates with flexible time', () => {
+  const current = attachCalendar([
+    withWeather(candidate('rain-flexible'), rainyWeather()),
+  ], [])[0];
+
+  const result = applyHardConstraints({
+    candidates: [current],
+    preferenceProfile: profile(),
+  });
+
+  assert.equal(result.accepted.length, 0);
+  assert.equal(result.rejected[0].reasons[0].reason, 'default_bad_weather');
+  assert.equal(result.rejected[0].reasons[0].policy, 'default_product_preference');
+});
+
+test('default weather policy keeps dry outdoor candidates', () => {
+  const current = attachCalendar([
+    withWeather(candidate('dry'), dryWeather()),
+  ], [])[0];
+
+  const result = applyHardConstraints({
+    candidates: [current],
+    preferenceProfile: profile(),
+  });
+
+  assert.equal(result.accepted.length, 1);
+  assert.equal(result.rejected.length, 0);
+});
+
+test('user says rain is okay so rainy candidate is not weather-filtered', () => {
+  const current = attachCalendar([
+    withWeather(candidate('rain-ok'), rainyWeather()),
+  ], [])[0];
+
+  const result = applyHardConstraints({
+    candidates: [current],
+    preferenceProfile: normalizePreferenceProfile({
+      version: 2,
+      searchWindowDays: 7,
+      preferences: [],
+      hardConstraints: [],
+      objectives: [],
+      unresolvedPreferences: [],
+      sourceText: '小雨没关系',
+      updatedAt: '2026-09-03T00:00:00.000Z',
+    }, {
+      updatedAt: '2026-09-03T00:00:00.000Z',
+    }),
+  });
+
+  assert.equal(result.accepted.length, 1);
+  assert.equal(result.rejected.length, 0);
+  assert.equal(result.accepted[0].features.weatherWarning.active, true);
+});
+
+test('explicit user time keeps rainy candidate and attaches weather warning', () => {
+  const current = attachCalendar([
+    withWeather(candidate('rain-explicit-time'), rainyWeather()),
+  ], [])[0];
+  const preferenceProfile = normalizePreferenceProfile({
+    version: 2,
+    searchWindowDays: 1,
+    searchScope: {
+      days: 1,
+      timeWindow: { after: '17:00' },
+      sourceText: '明天下午5点帮我找场',
+      source: 'user',
+      isExplicit: true,
+    },
+    preferences: [],
+    hardConstraints: [],
+    objectives: [],
+    unresolvedPreferences: [],
+    sourceText: '明天下午5点帮我找场',
+    updatedAt: '2026-09-03T00:00:00.000Z',
+  }, {
+    updatedAt: '2026-09-03T00:00:00.000Z',
+  });
+
+  const result = applyHardConstraints({
+    candidates: [current],
+    preferenceProfile,
+  });
+
+  assert.equal(result.accepted.length, 1);
+  assert.equal(result.accepted[0].features.weatherWarning.active, true);
+  assert.equal(result.accepted[0].features.weatherWarning.badWeather, true);
+  assert.equal(result.accepted[0].features.weatherWarning.condition, 'rain');
+  assert.equal(result.accepted[0].features.weatherWarning.precipitationProbability, 72);
+});
+
+test('replanner-expanded time is not treated as explicit user time for weather override', () => {
+  const current = attachCalendar([
+    withWeather(candidate('rain-replanner-time'), rainyWeather()),
+  ], [])[0];
+  const preferenceProfile = normalizePreferenceProfile({
+    version: 2,
+    searchWindowDays: 7,
+    preferences: [],
+    hardConstraints: [{
+      feature: 'start_time',
+      type: 'hard',
+      importance: 'medium',
+      priority: 'medium',
+      rule: { after: '17:00' },
+      sourceText: 'agent shifted time window',
+      source: 'replanner',
+      isExplicit: false,
+    }],
+    objectives: [],
+    unresolvedPreferences: [],
+    sourceText: 'synthetic',
+    updatedAt: '2026-09-03T00:00:00.000Z',
+  }, {
+    updatedAt: '2026-09-03T00:00:00.000Z',
+  });
+
+  const result = applyHardConstraints({
+    candidates: [current],
+    preferenceProfile,
+  });
+
+  assert.equal(result.accepted.length, 0);
+  assert.equal(result.rejected[0].reasons[0].reason, 'default_bad_weather');
+});
+
+test('precipitation probability at 50 percent is bad weather boundary', () => {
+  const current = attachCalendar([
+    withWeather(candidate('rain-boundary'), rainyWeather({
+      condition: 'cloudy',
+      precipitationMm: 0,
+      precipitationProbability: 50,
+      weatherCode: '3',
+    })),
+  ], [])[0];
+
+  const result = applyHardConstraints({
+    candidates: [current],
+    preferenceProfile: profile(),
+  });
+
+  assert.equal(result.accepted.length, 0);
+  assert.equal(result.rejected[0].reasons[0].precipitationProbability, 50);
+});
+
+test('missing weather data is not treated as bad weather by default policy', () => {
+  const current = attachCalendar([
+    withWeather(candidate('weather-missing'), {
+      forecastAvailable: false,
+      precipitationProbability: null,
+      precipitationMm: null,
+      condition: null,
+      weatherCode: null,
     }),
   ], [])[0];
 
   const result = applyHardConstraints({
     candidates: [current],
-    preferenceProfile: profile({ weatherType: 'soft' }),
+    preferenceProfile: profile(),
   });
 
   assert.equal(result.accepted.length, 1);
+  assert.equal(result.accepted[0].features.weatherUnknown, true);
 });
 
 test('unknown calendar is not treated as free', () => {
@@ -437,6 +660,135 @@ test('enriched candidate schema includes weather and calendar facts', async () =
 
   assert.equal(enriched.features.weather.temperatureC, 21);
   assert.equal(enriched.features.calendar.free, true);
+});
+
+test('Strathfield weather unavailable falls back to nearby Burwood weather', async () => {
+  const current = {
+    ...candidate('strathfield-weather'),
+    venue: 'Strathfield Sports Club Tennis',
+    features: {
+      ...candidate('strathfield-weather').features,
+      venue: {
+        id: 'unified-strathfield-sports-club-tennis',
+        name: 'Strathfield Sports Club Tennis',
+        suburb: 'Strathfield',
+        location: { lat: -33.8791, lng: 151.0836 },
+      },
+    },
+    source: {
+      canonicalAvailability: {
+        venue: {
+          id: 'unified-strathfield-sports-club-tennis',
+          name: 'Strathfield Sports Club Tennis',
+          suburb: 'Strathfield',
+          location: { lat: -33.8791, lng: 151.0836 },
+        },
+      },
+    },
+  };
+
+  const attempted = [];
+  const [enriched] = await enrichCandidates({
+    candidates: [current],
+    weatherAdapter: async ({ location, slots }) => {
+      attempted.push(location.label);
+      return slots.map((slot) => ({
+        candidateId: slot.id,
+        startTime: slot.startTime,
+        forecastAvailable: location.label === 'Burwood',
+        temperatureC: location.label === 'Burwood' ? 22 : null,
+        feelsLikeC: location.label === 'Burwood' ? 22 : null,
+        precipitationProbability: location.label === 'Burwood' ? 10 : null,
+        precipitationMm: location.label === 'Burwood' ? 0 : null,
+        windKph: location.label === 'Burwood' ? 8 : null,
+        weatherCode: location.label === 'Burwood' ? '0' : null,
+        source: 'test-weather',
+        unavailableReason: location.label === 'Burwood' ? undefined : 'forecast_hour_unavailable',
+      }));
+    },
+    calendarAdapter: async () => ({ busy: [] }),
+  });
+
+  assert.deepEqual(attempted, ['Strathfield Sports Club Tennis', 'Strathfield', 'Burwood']);
+  assert.equal(enriched.features.weather.forecastAvailable, true);
+  assert.equal(enriched.features.weather.weatherSource, 'Burwood');
+  assert.equal(enriched.features.weather.fallbackLevel, 'nearby');
+  assert.equal(enriched.features.weather.confidence, 'medium_low');
+});
+
+test('nearby weather unavailable falls back to Sydney weather', async () => {
+  const current = {
+    ...candidate('strathfield-sydney-weather'),
+    venue: 'Strathfield Sports Club Tennis',
+    features: {
+      ...candidate('strathfield-sydney-weather').features,
+      venue: {
+        id: 'unified-strathfield-sports-club-tennis',
+        name: 'Strathfield Sports Club Tennis',
+        suburb: 'Strathfield',
+      },
+    },
+    source: {
+      canonicalAvailability: {
+        venue: {
+          id: 'unified-strathfield-sports-club-tennis',
+          name: 'Strathfield Sports Club Tennis',
+          suburb: 'Strathfield',
+        },
+      },
+    },
+  };
+
+  const attempted = [];
+  const [enriched] = await enrichCandidates({
+    candidates: [current],
+    weatherAdapter: async ({ location, slots }) => {
+      attempted.push(location.label);
+      return slots.map((slot) => ({
+        candidateId: slot.id,
+        startTime: slot.startTime,
+        forecastAvailable: location.label === 'Sydney',
+        temperatureC: location.label === 'Sydney' ? 23 : null,
+        feelsLikeC: location.label === 'Sydney' ? 23 : null,
+        precipitationProbability: location.label === 'Sydney' ? 20 : null,
+        precipitationMm: location.label === 'Sydney' ? 0 : null,
+        windKph: location.label === 'Sydney' ? 12 : null,
+        weatherCode: location.label === 'Sydney' ? '1' : null,
+        source: 'test-weather',
+        unavailableReason: location.label === 'Sydney' ? undefined : 'forecast_hour_unavailable',
+      }));
+    },
+    calendarAdapter: async () => ({ busy: [] }),
+  });
+
+  assert.deepEqual(attempted, ['Strathfield', 'Burwood', 'Sydney CBD', 'Sydney']);
+  assert.equal(enriched.features.weather.forecastAvailable, true);
+  assert.equal(enriched.features.weather.weatherSource, 'Sydney');
+  assert.equal(enriched.features.weather.fallbackLevel, 'sydney');
+  assert.equal(enriched.features.weather.confidence, 'low');
+});
+
+test('soft weather preference keeps candidate when all weather sources are unavailable', () => {
+  const current = attachCalendar([
+    withWeather(candidate('soft-weather-unavailable'), {
+      forecastAvailable: false,
+      precipitationProbability: null,
+      precipitationMm: null,
+      condition: null,
+      weatherCode: null,
+      fallbackLevel: 'sydney',
+      confidence: 'low',
+      unavailableReason: 'all_weather_sources_unavailable',
+    }),
+  ], [])[0];
+
+  const result = applyHardConstraints({
+    candidates: [current],
+    preferenceProfile: profile({ weatherType: 'soft' }),
+  });
+
+  assert.equal(result.accepted.length, 1);
+  assert.equal(result.accepted[0].features.weatherUnknown, true);
 });
 
 test('hard filtering returns explainable rejection reasons', () => {

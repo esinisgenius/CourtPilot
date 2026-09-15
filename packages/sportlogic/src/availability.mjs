@@ -58,6 +58,9 @@ function normalizeVenueConfig(config) {
     name: config.name ?? clientId,
     suburb: config.suburb ?? null,
     provider: 'sportlogic',
+    sport: config.sport ?? null,
+    location: config.location ?? null,
+    address: config.address ?? null,
     officialUrl: config.officialUrl,
     origin: url.origin,
     clientId,
@@ -107,8 +110,12 @@ function parseBootstrapMetadata(html, venue) {
   };
 }
 
-async function bootstrapAnonymousSession(venue) {
+async function bootstrapAnonymousSession(venue, { signal = null } = {}) {
   const browser = await chromium.launch({ headless: true });
+  const abortHandler = () => {
+    browser.close().catch(() => {});
+  };
+  if (signal) signal.addEventListener('abort', abortHandler, { once: true });
   const context = await browser.newContext({
     storageState: undefined,
     userAgent: BROWSER_USER_AGENT,
@@ -128,8 +135,9 @@ async function bootstrapAnonymousSession(venue) {
     }
     return { html, cookieHeader };
   } finally {
+    if (signal) signal.removeEventListener('abort', abortHandler);
     await context.close();
-    await browser.close();
+    await browser.close().catch(() => {});
   }
 }
 
@@ -145,9 +153,10 @@ function buildAvailabilityUrl({ endpointUrl, clientId, venueId, date }) {
   return `${endpointUrl}?${params}`;
 }
 
-async function fetchAvailabilityFragment({ url, cookieHeader, fetchImpl = fetch }) {
+async function fetchAvailabilityFragment({ url, cookieHeader, fetchImpl = fetch, signal = null }) {
   const response = await fetchImpl(url, {
     method: 'GET',
+    signal,
     headers: {
       accept: 'text/html, */*; q=0.01',
       cookie: cookieHeader,
@@ -275,6 +284,9 @@ function normalizeAvailability({
           id: venue.id,
           name: venue.name,
           providerVenueId: metadata.clientId,
+          suburb: venue.suburb,
+          ...(venue.location ? { location: venue.location } : {}),
+          ...(venue.address ? { address: venue.address } : {}),
         },
         court: {
           id: `sportlogic-court-${metadata.clientId}-${court.providerCourtId}`,
@@ -285,6 +297,14 @@ function normalizeAvailability({
         startTime: localDateTime(link.date, link.time),
         durationMinutes,
         price: metadata.price,
+        ...(venue.sport === 'tennis' ? {
+          eligibility: {
+            sport: {
+              type: 'tennis',
+              proof: 'provider_venue',
+            },
+          },
+        } : {}),
         provenance: {
           source: 'live',
           auth: 'public',
@@ -316,7 +336,7 @@ function withNextHourAvailability(slots) {
   });
 }
 
-async function discoverCourtIdentity({ venue, metadata, date, days, cookieHeader, fetchImpl }) {
+async function discoverCourtIdentity({ venue, metadata, date, days, cookieHeader, fetchImpl, signal = null }) {
   const courtMap = new Map();
   const fragmentsByDate = new Map();
   for (let offset = 0; offset < days; offset += 1) {
@@ -327,7 +347,7 @@ async function discoverCourtIdentity({ venue, metadata, date, days, cookieHeader
       venueId: metadata.venueId,
       date: probeDate,
     });
-    const fragment = await fetchAvailabilityFragment({ url, cookieHeader, fetchImpl });
+    const fragment = await fetchAvailabilityFragment({ url, cookieHeader, fetchImpl, signal });
     fragmentsByDate.set(probeDate, fragment);
     mergeCourtIdentity(courtMap, parseGridFragment(fragment));
     if (courtMap.size > 0 && incompleteCourtNames(courtMap).length === 0) break;
@@ -351,6 +371,7 @@ async function readVenueAvailability(config, {
   fetchImpl = fetch,
   bootstrapSessionImpl = bootstrapAnonymousSession,
   observedAt = new Date().toISOString(),
+  signal = null,
 } = {}) {
   if (!Number.isInteger(durationMinutes) || durationMinutes < 1) {
     throw new Error('durationMinutes must be a positive integer');
@@ -360,7 +381,7 @@ async function readVenueAvailability(config, {
   }
 
   const venue = normalizeVenueConfig(config);
-  const session = await bootstrapSessionImpl(venue);
+  const session = await bootstrapSessionImpl(venue, { signal });
   const metadata = parseBootstrapMetadata(session.html, venue);
   const { courtMap, fragmentsByDate } = await discoverCourtIdentity({
     venue,
@@ -369,6 +390,7 @@ async function readVenueAvailability(config, {
     days: identityDiscoveryDays,
     cookieHeader: session.cookieHeader,
     fetchImpl,
+    signal,
   });
   const fragment = fragmentsByDate.get(date) ?? await fetchAvailabilityFragment({
     url: buildAvailabilityUrl({
@@ -379,6 +401,7 @@ async function readVenueAvailability(config, {
     }),
     cookieHeader: session.cookieHeader,
     fetchImpl,
+    signal,
   });
 
   return withNextHourAvailability(normalizeAvailability({
@@ -395,10 +418,85 @@ async function readVenueAvailability(config, {
 async function readAvailability({
   venues = DEFAULT_SPORTLOGIC_VENUES,
   date = todayIsoDate(),
+  days = 1,
   durationMinutes = 60,
   identityDiscoveryDays = 14,
   fetchImpl = fetch,
   bootstrapSessionImpl = bootstrapAnonymousSession,
+  signal = null,
+} = {}) {
+  if (!Number.isInteger(days) || days < 1) throw new Error('days must be a positive integer');
+  const observedAt = new Date().toISOString();
+  const results = [];
+  const failures = [];
+
+  for (const config of venues) {
+    const venue = normalizeVenueConfig(config);
+    try {
+      const session = await bootstrapSessionImpl(venue, { signal });
+      const metadata = parseBootstrapMetadata(session.html, venue);
+      const { courtMap, fragmentsByDate } = await discoverCourtIdentity({
+        venue,
+        metadata,
+        date,
+        days: Math.max(identityDiscoveryDays, days),
+        cookieHeader: session.cookieHeader,
+        fetchImpl,
+        signal,
+      });
+
+      for (let offset = 0; offset < days; offset += 1) {
+        const currentDate = addDays(date, offset);
+        const fragment = fragmentsByDate.get(currentDate) ?? await fetchAvailabilityFragment({
+          url: buildAvailabilityUrl({
+            endpointUrl: metadata.endpointUrl,
+            clientId: metadata.clientId,
+            venueId: metadata.venueId,
+            date: currentDate,
+          }),
+          cookieHeader: session.cookieHeader,
+          fetchImpl,
+          signal,
+        });
+
+        results.push(...withNextHourAvailability(normalizeAvailability({
+          venue,
+          metadata,
+          fragment,
+          courtMap,
+          date: currentDate,
+          durationMinutes,
+          observedAt,
+        })));
+      }
+    } catch (error) {
+      failures.push({
+        venue: venue.name ?? venue.officialUrl,
+        url: venue.officialUrl,
+        code: error.code ?? 'SPORTLOGIC_PROVIDER_ERROR',
+        message: error.message,
+      });
+    }
+  }
+
+  if (failures.length > 0) {
+    const error = new SportLogicAvailabilityError('SPORTLOGIC_PARTIAL_FAILURE', 'One or more SportLogic venues failed availability acquisition');
+    error.failures = failures;
+    error.availability = results;
+    throw error;
+  }
+
+  return results;
+}
+
+async function readSingleDateAvailability({
+  venues = DEFAULT_SPORTLOGIC_VENUES,
+  date = todayIsoDate(),
+  durationMinutes = 60,
+  identityDiscoveryDays = 14,
+  fetchImpl = fetch,
+  bootstrapSessionImpl = bootstrapAnonymousSession,
+  signal = null,
 } = {}) {
   const observedAt = new Date().toISOString();
   const results = [];
@@ -413,6 +511,7 @@ async function readAvailability({
         fetchImpl,
         bootstrapSessionImpl,
         observedAt,
+        signal,
       }));
     } catch (error) {
       failures.push({

@@ -27,6 +27,12 @@ function broadNoCandidateSearchAlreadyTried(state) {
   return triedRadius && triedDate && triedOtherVenues;
 }
 
+function locationNeedsUserClarification(state = {}) {
+  const status = state.searchScope?.locationRouting?.status;
+  return status === 'unresolved'
+    || status === 'no_provider_coverage';
+}
+
 function failedConstraintCodes(evaluation = {}) {
   return new Set((evaluation.failedConstraints ?? []).map((failure) => {
     if (typeof failure === 'string') return failure;
@@ -93,6 +99,15 @@ function heuristicReplanningAction(state, evaluation) {
   if (state.candidates.length === 0) {
     const [diagnosedMode] = diagnoseFailureModes(state, evaluation);
     if (diagnosedMode) return actionForFailureMode(diagnosedMode);
+
+    if (locationNeedsUserClarification(state)) {
+      return {
+        selectedAction: REPLANNING_ACTIONS.ASK_USER,
+        targetPreference: 'area',
+        rationale: 'The target area could not be resolved to a reliable geographic provider scope.',
+        expectedEffect: 'Ask the user to clarify the area or choose a broader search area before searching farther.',
+      };
+    }
 
     if (broadNoCandidateSearchAlreadyTried(state)) {
       return {

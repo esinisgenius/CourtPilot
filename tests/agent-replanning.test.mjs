@@ -57,9 +57,9 @@ function profile(preferences = [], hardConstraints = []) {
     hardConstraints,
     unresolvedPreferences: [],
     sourceText: 'synthetic preference text',
-    updatedAt: '2026-09-03T00:00:00.000Z',
+    updatedAt: '2026-09-16T00:00:00.000Z',
   }, {
-    updatedAt: '2026-09-03T00:00:00.000Z',
+    updatedAt: '2026-09-16T00:00:00.000Z',
   });
 }
 
@@ -74,13 +74,30 @@ function candidate({
     id,
     venue: 'SUSF',
     court,
-    startTime: '2026-09-03T08:00:00.000Z',
+    startTime: '2026-09-20T08:00:00.000Z',
     durationMinutes: 60,
     features: {
-      localDate: '2026-09-03',
+      localDate: '2026-09-20',
       localTime,
       nextHourFree,
       price,
+    },
+  };
+}
+
+function rainyCandidate(overrides = {}) {
+  const base = candidate(overrides);
+  return {
+    ...base,
+    features: {
+      ...base.features,
+      weather: {
+        forecastAvailable: true,
+        condition: 'rain',
+        precipitationProbability: 72,
+        precipitationMm: 1.2,
+        weatherCode: '61',
+      },
     },
   };
 }
@@ -98,12 +115,12 @@ function accessibleCandidate({
     transit: {
       durationMinutes: transitMinutes,
       distanceMeters: transitMinutes * 100,
-      departureTime: '2026-09-05T07:15:00.000Z',
+      departureTime: '2026-09-20T07:15:00.000Z',
       unavailableReason: null,
     },
     drive: { durationMinutes: driveMinutes, distanceMeters: driveMinutes * 100, unavailableReason: null },
     source: 'google_routes',
-    observedAt: '2026-09-05T00:00:00.000Z',
+    observedAt: '2026-09-16T00:00:00.000Z',
   };
   return {
     ...base,
@@ -147,7 +164,7 @@ function availabilitySlot({
   provider = 'SUSF',
   venue = 'SUSF',
   court = 'Court 4',
-  startTime = '2026-09-04T18:00:00',
+  startTime = '2026-09-20T18:00:00',
   durationMinutes = 120,
 } = {}) {
   return {
@@ -395,6 +412,69 @@ test('no hard-feasible candidates returns NO_FEASIBLE_CANDIDATES', () => {
   assert.equal(evaluation.status, EVALUATOR_STATUS.NO_FEASIBLE_CANDIDATES);
   assert.equal(evaluation.satisfactory, false);
   assert.equal(evaluation.failedConstraints[0].reason, 'transport_time_exceeds_limit');
+});
+
+test('hard rejected candidate diagnostics do not fail a round with feasible candidates', () => {
+  const preferences = profile();
+  const accepted = Array.from({ length: 6 }, (_, index) => candidate({ id: `accepted-${index}` }));
+  const rejected = Array.from({ length: 4 }, (_, index) => ({
+    ...candidate({ id: `rejected-${index}` }),
+    reasons: [{
+      feature: 'start_time',
+      reason: 'start_time_outside_temporal_window',
+    }],
+  }));
+  const evaluation = evaluateCandidateSet({
+    candidates: accepted,
+    rejectedCandidates: rejected,
+    preferences,
+  });
+
+  assert.equal(evaluation.status, EVALUATOR_STATUS.SATISFACTORY);
+  assert.equal(evaluation.satisfactory, true);
+  assert.equal(evaluation.reasons.includes('hard_constraints_failed'), false);
+  assert.equal(evaluation.failedConstraints.length, 4);
+});
+
+test('hard rejected candidates fail the round only when no feasible candidates remain', () => {
+  const preferences = profile();
+  const rejected = Array.from({ length: 10 }, (_, index) => ({
+    ...candidate({ id: `rejected-${index}` }),
+    reasons: [{
+      feature: 'start_time',
+      reason: 'start_time_outside_temporal_window',
+    }],
+  }));
+  const evaluation = evaluateCandidateSet({
+    candidates: [],
+    rejectedCandidates: rejected,
+    preferences,
+  });
+
+  assert.equal(evaluation.status, EVALUATOR_STATUS.NO_FEASIBLE_CANDIDATES);
+  assert.equal(evaluation.satisfactory, false);
+  assert.equal(evaluation.reasons.includes('hard_constraints_failed'), true);
+  assert.equal(evaluation.failedConstraints.length, 10);
+});
+
+test('default weather rejection is visible to replanning evaluation', () => {
+  const preferences = profile();
+  const hardResult = applyHardConstraints({
+    candidates: [rainyCandidate({ id: 'rainy-flexible' })],
+    preferenceProfile: preferences,
+    defaultCalendarBusyIsHard: false,
+  });
+  const evaluation = evaluateCandidateSet({
+    candidates: hardResult.accepted,
+    rejectedCandidates: hardResult.rejected,
+    preferences,
+  });
+
+  assert.equal(hardResult.accepted.length, 0);
+  assert.equal(evaluation.status, EVALUATOR_STATUS.NO_FEASIBLE_CANDIDATES);
+  assert.equal(evaluation.failedConstraints[0].feature, 'weather');
+  assert.equal(evaluation.failedConstraints[0].reason, 'default_bad_weather');
+  assert.equal(evaluation.reasons.includes('hard_constraints_failed'), true);
 });
 
 test('multiple high-priority soft violations need replanning', async () => {
@@ -956,6 +1036,77 @@ test('Bookable acquisition failure is recorded instead of converted to zero avai
   assert.equal(observed.factualObservations.availability.providers[0].status, 'failed');
   assert.equal(observed.factualObservations.availability.acquisitionFailures[0].code, 'BOOKABLE_PROVIDER_ERROR');
   assert.deepEqual(observed.searchScope.providerScope.failedProviderIds, ['bookable']);
+});
+
+test('provider timeout preserves partial availability candidates', async () => {
+  const initialState = state({
+    candidates: [],
+    searchScope: {
+      providerScope: {
+        activeProviderIds: ['susf'],
+        expandableProviderIds: ['susf'],
+      },
+    },
+  });
+
+  const observed = await observeConfiguredAvailabilityProviders(initialState, {
+    providerTimeoutMs: 5,
+    providerFetchers: {
+      susf({ signal }) {
+        return new Promise((resolve, reject) => {
+          signal.addEventListener('abort', () => {
+            const error = new Error('timed out with partial availability');
+            error.code = 'PROVIDER_TIMEOUT';
+            error.availability = [availabilitySlot()];
+            reject(error);
+          }, { once: true });
+        });
+      },
+    },
+  });
+
+  assert.equal(observed.candidates.length, 1);
+  assert.equal(observed.factualObservations.availability.providers[0].status, 'timed_out');
+  assert.equal(observed.factualObservations.availability.providers[0].candidateCount, 1);
+  assert.deepEqual(observed.searchScope.providerScope.failedProviderIds, ['susf']);
+});
+
+test('SUSF provider can use a wider timeout than lightweight providers', async () => {
+  const initialState = state({
+    candidates: [],
+    searchScope: {
+      providerScope: {
+        activeProviderIds: ['susf', 'bookable'],
+        expandableProviderIds: ['susf', 'bookable'],
+      },
+    },
+  });
+
+  const observed = await observeConfiguredAvailabilityProviders(initialState, {
+    providerTimeoutMs: 5,
+    susfProviderTimeoutMs: 50,
+    providerFetchers: {
+      susf() {
+        return new Promise((resolve) => {
+          setTimeout(() => resolve([availabilitySlot()]), 15);
+        });
+      },
+      bookable({ signal }) {
+        return new Promise((resolve, reject) => {
+          signal.addEventListener('abort', () => {
+            const error = new Error('bookable timed out');
+            error.code = 'PROVIDER_TIMEOUT';
+            reject(error);
+          }, { once: true });
+        });
+      },
+    },
+  });
+
+  const observations = observed.factualObservations.availability.providers;
+  assert.equal(observed.candidates.length, 1);
+  assert.equal(observations.find((item) => item.providerId === 'susf').status, 'success');
+  assert.equal(observations.find((item) => item.providerId === 'bookable').status, 'timed_out');
 });
 
 test('duplicate provider expansion is rejected deterministically', async () => {

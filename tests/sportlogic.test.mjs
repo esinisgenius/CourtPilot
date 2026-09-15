@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  assertCanonicalVenueContract,
   buildCandidate,
   validateCanonicalAvailability,
 } from '../packages/core/src/index.mjs';
@@ -197,6 +198,7 @@ test('SportLogic anonymous acquisition uses bootstrap cookies and no auth header
 });
 
 test('SportLogic availability emits canonical schema with stable venue/court identity', async () => {
+  const [venue] = discoverVenues({ venues: [venueConfig] });
   const [slot] = await readAvailability({
     venues: [venueConfig],
     date: '2026-09-04',
@@ -207,12 +209,14 @@ test('SportLogic availability emits canonical schema with stable venue/court ide
   });
 
   assert.equal(validateCanonicalAvailability(slot.canonical), slot.canonical);
+  assertCanonicalVenueContract(slot, { configuredVenue: venue });
   assert.deepEqual(slot.canonical, {
     provider: 'sportlogic',
     venue: {
       id: 'fixture-sportlogic-burwood',
       name: 'Fixture SportLogic Courts',
       providerVenueId: 'fixture-courts',
+      suburb: 'Fixture',
     },
     court: {
       id: 'sportlogic-court-fixture-courts-C1',
@@ -274,6 +278,11 @@ test('SportLogic slots flow through existing candidate pipeline', async () => {
   assert.equal(candidate.source.availability.source, 'live');
   assert.equal(candidate.source.availability.availabilityMethod, 'direct_first_party_html');
   assert.equal(candidate.features.price, 23);
+  assert.deepEqual(candidate.booking, {
+    url: 'https://www.tennisvenues.com.au/booking/request?v=fixture-courts&id=C1&d=20260904&t=1430&cm=true',
+    capability: 'court_date_time_preselected',
+    provider: 'sportlogic',
+  });
 });
 
 test('SportLogic incomplete court id discovery fails explicitly instead of silently dropping a court', async () => {

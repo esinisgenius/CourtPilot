@@ -51,6 +51,8 @@ function buildInterpreterMessages(text) {
         'Negative vague time wording such as 中午不想打 usually means a soft avoid preference unless the user says that period is impossible, unavailable, or unacceptable. Keep it as rule.period=midday; do not invent 11:00-14:00.',
         'For multiple courts, scope modifiers carefully. In 最好找两块挨着的场，不过分开也行, court_count exact 2 is the requested count, while adjacency is the relaxable part.',
         'Explicit fallback language such as 其他也行, 实在没有也可以, 分开也不是不行 usually means a soft relaxable preference.',
+        'When the user says 最好17点后，实在不行下午也可以, 17:00后 is preferred soft timing, not a hard constraint, because the user explicitly accepts afternoon as fallback.',
+        'When the user says 周六有事，周日晚上八点后, treat Saturday as unavailable and Sunday after 20:00 as the acceptable hard time window. Do not reinterpret 周六有事 as a vague midday preference.',
         'Optimization wording such as 最便宜, 价格最低, 便宜更重要, 越早越好, 通勤时间最短, 尽量多打一会儿 belongs in objectives, not as a fake threshold. Do not also create an equivalent soft preference for the same semantic objective.',
         'Milder wording such as 便宜一点, 便宜一点就更好了, or 稍微便宜点 is a soft price preference, not an objective.',
         'Explicit no-preference statements such as 无所谓, 随便, 都可以, 不在乎, 怎么样都行 must be omitted for that feature. Do not put explicit indifference in unresolvedPreferences.',

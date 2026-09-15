@@ -252,6 +252,25 @@ function prepareAvailabilityRequest(captured, requestOptions) {
   };
 }
 
+function redactCapturedBody(captured) {
+  const contentType = captured.headers['content-type'] ?? captured.headers['Content-Type'] ?? '';
+  const parsed = parseBody(captured.postData ?? '', contentType);
+  if (parsed.kind === 'empty' || parsed.kind === 'raw') return captured.postData ?? '';
+  const body = parsed.value;
+  setCaseInsensitiveDeep(body, '__RequestVerificationToken', '__TOKEN__');
+  if (parsed.kind === 'json') return JSON.stringify(body);
+  return body.toString();
+}
+
+function sanitizeCapturedAvailabilityRequest(captured) {
+  return {
+    url: captured.url,
+    method: captured.method,
+    headers: prepareHeaders(captured),
+    postData: redactCapturedBody(captured),
+  };
+}
+
 function createAvailabilityCapture(page, facilityId = null, { captureTimeoutMs }) {
   let captured = null;
   let stopped = false;
@@ -319,4 +338,5 @@ export {
   fetchAvailabilityJson,
   getVerificationToken,
   prepareAvailabilityRequest,
+  sanitizeCapturedAvailabilityRequest,
 };

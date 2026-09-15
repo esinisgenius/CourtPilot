@@ -46,6 +46,9 @@ function normalizeVenueConfig(config) {
     name: config.name ?? 'Intrac venue',
     suburb: config.suburb ?? null,
     provider: 'intrac',
+    sport: config.sport ?? null,
+    location: config.location ?? null,
+    address: config.address ?? null,
     officialUrl: config.officialUrl,
     origin: url.origin,
     schedulePath: url.pathname,
@@ -69,9 +72,10 @@ function buildScheduleUrl({ venue, date }) {
   return url.href;
 }
 
-async function fetchScheduleHtml({ url, fetchImpl = fetch, referer = null }) {
+async function fetchScheduleHtml({ url, fetchImpl = fetch, referer = null, signal = null }) {
   const response = await fetchImpl(url, {
     method: 'GET',
+    signal,
     headers: {
       accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       'user-agent': BROWSER_USER_AGENT,
@@ -251,6 +255,7 @@ async function discoverCourtIdentity({
   date,
   days,
   fetchImpl = fetch,
+  signal = null,
 }) {
   const courtMap = new Map();
   const schedulesByDate = new Map();
@@ -261,6 +266,7 @@ async function discoverCourtIdentity({
       url: buildScheduleUrl({ venue, date: probeDate }),
       fetchImpl,
       referer: venue.referer,
+      signal,
     });
     const schedule = parseScheduleHtml(html, { locationId: venue.locationId });
     schedulesByDate.set(probeDate, { html, schedule });
@@ -315,6 +321,9 @@ function normalizeAvailability({
           id: venue.id,
           name: venue.name,
           providerVenueId: venue.locationId,
+          suburb: venue.suburb,
+          ...(venue.location ? { location: venue.location } : {}),
+          ...(venue.address ? { address: venue.address } : {}),
         },
         court: {
           id: `intrac-court-${venue.locationId}-${court.providerCourtId}`,
@@ -329,6 +338,14 @@ function normalizeAvailability({
           currency: 'AUD',
           confidence: 'unknown',
         },
+        ...(venue.sport === 'tennis' ? {
+          eligibility: {
+            sport: {
+              type: 'tennis',
+              proof: 'provider_venue',
+            },
+          },
+        } : {}),
         provenance: {
           source: 'live',
           auth: 'public',
@@ -368,6 +385,7 @@ async function readVenueAvailability(config, {
   fetchImpl = fetch,
   observedAt = new Date().toISOString(),
   discovery = null,
+  signal = null,
 } = {}) {
   if (!Number.isInteger(durationMinutes) || durationMinutes < 1) {
     throw new Error('durationMinutes must be a positive integer');
@@ -382,12 +400,14 @@ async function readVenueAvailability(config, {
     date,
     days: identityDiscoveryDays,
     fetchImpl,
+    signal,
   });
   const current = schedulesByDate.get(date) ?? {
     html: await fetchScheduleHtml({
       url: buildScheduleUrl({ venue, date }),
       fetchImpl,
       referer: venue.referer,
+      signal,
     }),
   };
   const schedule = current.schedule ?? parseScheduleHtml(current.html, { locationId: venue.locationId });
@@ -408,6 +428,7 @@ async function readAvailability({
   durationMinutes = 60,
   identityDiscoveryDays = 14,
   fetchImpl = fetch,
+  signal = null,
 } = {}) {
   const observedAt = new Date().toISOString();
   const results = [];
@@ -421,6 +442,7 @@ async function readAvailability({
         identityDiscoveryDays,
         fetchImpl,
         observedAt,
+        signal,
       }));
     } catch (error) {
       failures.push({

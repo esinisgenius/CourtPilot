@@ -1,4 +1,5 @@
 .auth/
+.cache/
 output/
 node_modules/
 .env

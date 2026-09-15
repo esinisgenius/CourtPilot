@@ -20,8 +20,37 @@ function factsFromAvailability(availability) {
     sourceMetadata: {
       itemId: availability.itemId,
       officialUrl: availability.officialUrl,
+      bookingUrl: availability.bookingUrl,
     },
   });
+}
+
+function safeUrl(value) {
+  if (typeof value !== 'string' || value.trim().length === 0) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function bookingCapability(provider, facts) {
+  if (safeUrl(facts.bookingUrl)) {
+    if (provider === 'sportlogic') return 'court_date_time_preselected';
+    if (provider === 'intrac') return 'date_time_preselected';
+  }
+  if (safeUrl(facts.officialUrl)) return 'booking_page';
+  return null;
+}
+
+function bookingFromFacts(provider, facts) {
+  const url = safeUrl(facts.bookingUrl) ?? safeUrl(facts.officialUrl);
+  return {
+    url,
+    capability: url ? bookingCapability(provider, facts) : null,
+    provider,
+  };
 }
 
 function buildCandidate(availability) {
@@ -29,6 +58,14 @@ function buildCandidate(availability) {
   const canonical = availability?.canonical ? validateCanonicalAvailability(availability.canonical) : null;
   const provider = facts.provider ?? facts.venue;
   const local = getSydneyLocalDateTime(facts.startTime);
+  const sportMetadata = {
+    sport: facts.sport ?? facts.activity ?? null,
+    activity: facts.activity ?? null,
+    category: facts.category ?? null,
+    venueType: facts.venueType ?? facts.type ?? null,
+    tags: facts.tags ?? facts.canonicalTags ?? [],
+    providerMetadata: facts.providerMetadata ?? facts.metadata ?? null,
+  };
 
   return {
     id: stableCandidateId({
@@ -42,13 +79,18 @@ function buildCandidate(availability) {
     court: facts.court,
     startTime: facts.startTime,
     durationMinutes: facts.durationMinutes,
+    booking: bookingFromFacts(provider, facts),
     features: {
       nextHourFree: facts.nextHourAlsoAvailable,
       localTime: local.localTime,
       localDate: local.localDate,
+      weekday: local.weekday,
       preferredTime: null,
       price: canonical?.price.amount ?? null,
       priceOptions: facts.priceOptions ?? [],
+      venue: canonical?.venue ?? null,
+      eligibility: canonical?.eligibility ?? facts.eligibility ?? null,
+      sportMetadata,
     },
     source: {
       provider,
@@ -95,6 +137,7 @@ function summarizeCandidates(candidates) {
 export {
   buildCandidate,
   buildCandidates,
+  bookingFromFacts,
   getCurrentSusfCandidates,
   stableCandidateId,
   summarizeCandidates,

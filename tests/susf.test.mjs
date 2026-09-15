@@ -1,13 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  assertCanonicalVenueContract,
   buildCandidate,
   validateCanonicalAvailability,
 } from '../packages/core/src/index.mjs';
 import {
   buildRankedCandidates,
+  defaultSearchHeadlessMode,
   discoverTennisCourtsFromFacilities,
   extractRateTableFromHtml,
+  isAvailabilityTriggerText,
   normalizeAvailability,
   prepareAvailabilityRequest,
   toPublicAvailability,
@@ -151,6 +154,30 @@ test('availability request construction fails when required runtime metadata is 
   }), /serviceId, durationIds/);
 });
 
+test('SUSF availability discovery does not treat booking or login controls as search triggers', () => {
+  assert.equal(isAvailabilityTriggerText('Choose Tennis Synthetic Court 4'), true);
+  assert.equal(isAvailabilityTriggerText('View availability'), true);
+  assert.equal(isAvailabilityTriggerText('Book Tennis Synthetic Court 4'), false);
+  assert.equal(isAvailabilityTriggerText('Reserve Court 4'), false);
+  assert.equal(isAvailabilityTriggerText('Sign in to book'), false);
+});
+
+test('SUSF search availability defaults to headless unless explicitly disabled', () => {
+  const previous = process.env.HEADLESS;
+  try {
+    delete process.env.HEADLESS;
+    assert.equal(defaultSearchHeadlessMode(), true);
+    process.env.HEADLESS = '0';
+    assert.equal(defaultSearchHeadlessMode(), false);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.HEADLESS;
+    } else {
+      process.env.HEADLESS = previous;
+    }
+  }
+});
+
 test('60-minute availability normalization preserves start-time semantics', () => {
   const rows = normalizeAvailability({
     availabilities: [{
@@ -191,15 +218,30 @@ test('SUSF public availability exposes provider-agnostic canonical schema', () =
     next_hour_also_available: true,
     price_options: [{ name: 'Tennis Off-Peak Fee', amount: 29, currency: 'AUD', durationMinutes: 60 }],
     observedAt: '2026-09-04T00:00:00.000Z',
+    officialUrl: 'https://susf.perfectmind.com/39161/Clients/BookMe4FacilityList/List?calendarId=fixture',
   });
 
   assert.equal(validateCanonicalAvailability(slot.canonical), slot.canonical);
+  assertCanonicalVenueContract(slot, {
+    configuredVenue: {
+      id: 'susf-tennis',
+      name: 'Sydney Uni Sport Tennis Courts',
+      provider: 'susf',
+      providerVenueId: 'susf',
+      location: { lat: -33.8886, lng: 151.1873 },
+    },
+  });
   assert.deepEqual(slot.canonical, {
     provider: 'susf',
     venue: {
-      id: 'susf',
-      name: 'SUSF',
+      id: 'susf-tennis',
+      name: 'Sydney Uni Sport Tennis Courts',
       providerVenueId: 'susf',
+      location: {
+        lat: -33.8886,
+        lng: 151.1873,
+      },
+      suburb: 'Camperdown',
     },
     court: {
       id: 'susf-court-4',
@@ -217,6 +259,12 @@ test('SUSF public availability exposes provider-agnostic canonical schema', () =
       amount: 29,
       currency: 'AUD',
       confidence: 'verified',
+    },
+    eligibility: {
+      sport: {
+        type: 'tennis',
+        proof: 'verified_booking_page',
+      },
     },
     provenance: {
       source: 'live',
@@ -262,6 +310,7 @@ test('candidate builder uses canonical facts when legacy fields drift', () => {
     next_hour_also_available: true,
     price_options: [{ name: 'Tennis Off-Peak Fee', amount: 29, currency: 'AUD', durationMinutes: 60 }],
     observedAt: '2026-09-04T00:00:00.000Z',
+    officialUrl: 'https://susf.perfectmind.com/39161/Clients/BookMe4FacilityList/List?calendarId=fixture',
   });
 
   const candidate = buildCandidate({
@@ -272,12 +321,17 @@ test('candidate builder uses canonical facts when legacy fields drift', () => {
     durationMinutes: 999,
   });
 
-  assert.equal(candidate.venue, 'SUSF');
+  assert.equal(candidate.venue, 'Sydney Uni Sport Tennis Courts');
   assert.equal(candidate.court, 'Court 4');
   assert.equal(candidate.startTime, '2026-09-04T08:00:00+10:00');
   assert.equal(candidate.durationMinutes, 60);
   assert.equal(candidate.features.price, 29);
   assert.equal(candidate.source.availability.availabilityMethod, 'direct');
+  assert.deepEqual(candidate.booking, {
+    url: 'https://susf.perfectmind.com/39161/Clients/BookMe4FacilityList/List?calendarId=fixture',
+    capability: 'booking_page',
+    provider: 'susf',
+  });
 });
 
 test('120-minute native availability is represented as 120-minute starts without synthesizing adjacent 60-minute rows', () => {

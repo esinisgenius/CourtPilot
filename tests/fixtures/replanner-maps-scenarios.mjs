@@ -55,10 +55,10 @@ function verifiedSlotCandidate({ id = 'verified-home-slot', venue = mapsVenue({
     id,
     venue: 'SUSF',
     court: 'Court 4',
-    startTime: '2026-09-05T08:00:00.000Z',
+    startTime: '2026-09-20T08:00:00.000Z',
     durationMinutes: 60,
     features: {
-      localDate: '2026-09-05',
+      localDate: '2026-09-20',
       localTime: '18:00',
       nextHourFree: true,
       price: null,

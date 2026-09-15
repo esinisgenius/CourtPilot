@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  assertCanonicalVenueContract,
   validateCanonicalAvailability,
   buildCandidate,
   buildCandidates,
@@ -243,8 +244,9 @@ test('Bookable normalization preserves venue/resource identity and provenance', 
 });
 
 test('Bookable availability exposes provider-agnostic canonical schema', () => {
+  const venue = discoverVenues({ venues: [venueConfig] })[0];
   const slot = normalizeAvailability({
-    venue: discoverVenues({ venues: [venueConfig] })[0],
+    venue,
     rawBookables,
     rawOpeningHours,
     rawBookings,
@@ -254,6 +256,7 @@ test('Bookable availability exposes provider-agnostic canonical schema', () => {
   }).find((candidate) => candidate.resourceId === 'SC-108' && candidate.startTime === '2026-09-04T07:00:00+10:00');
 
   assert.equal(validateCanonicalAvailability(slot.canonical), slot.canonical);
+  assertCanonicalVenueContract(slot, { configuredVenue: venue });
   assert.deepEqual(slot.canonical, {
     provider: 'bookable',
     venue: {
@@ -277,6 +280,12 @@ test('Bookable availability exposes provider-agnostic canonical schema', () => {
       amount: 25,
       currency: 'AUD',
       confidence: 'verified',
+    },
+    eligibility: {
+      sport: {
+        type: 'tennis',
+        proof: 'provider_resource',
+      },
     },
     provenance: {
       source: 'live',
@@ -402,6 +411,11 @@ test('Bookable slots flow through existing candidate pipeline without provider-s
   assert.equal(candidate.source.provider, 'bookable');
   assert.equal(candidate.source.availability.source, 'live');
   assert.equal(candidate.source.availability.availabilityMethod, 'derived_first_party');
+  assert.deepEqual(candidate.booking, {
+    url: 'https://fixture.bookable.net.au/venues/40/fixture-tennis-courts',
+    capability: 'booking_page',
+    provider: 'bookable',
+  });
 });
 
 test('existing candidate pipeline can consume SUSF and Bookable normalized slots together', () => {

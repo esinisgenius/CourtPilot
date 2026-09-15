@@ -3,7 +3,7 @@ const DEFAULT_PROVIDER_REGISTRY = Object.freeze([
     id: 'susf',
     provider: 'SUSF',
     displayName: 'Sydney Uni Sport tennis courts',
-    stage: 'initial',
+    stage: 'expanded',
     enabled: true,
   },
   {
@@ -50,7 +50,7 @@ function normalizeProviderScope(providerScope = {}, {
   registry = DEFAULT_PROVIDER_REGISTRY,
 } = {}) {
   const initialProviderIds = unique(providerScope.initialProviderIds ?? enabledProviderIds(registry, 'initial'));
-  const expandableProviderIds = unique(providerScope.expandableProviderIds ?? enabledProviderIds(registry, 'expanded'));
+  const expandableProviderIds = unique(providerScope.expandableProviderIds ?? enabledProviderIds(registry));
   const activeProviderIds = unique(providerScope.activeProviderIds ?? initialProviderIds);
   const observedProviderIds = unique(providerScope.observedProviderIds);
   const failedProviderIds = unique(providerScope.failedProviderIds);

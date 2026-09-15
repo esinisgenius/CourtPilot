@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  assertCanonicalVenueContract,
   buildCandidate,
   validateCanonicalAvailability,
 } from '../packages/core/src/index.mjs';
@@ -187,6 +188,7 @@ test('Intrac venue-specific referer is sent only when configured', async () => {
 });
 
 test('Intrac availability emits canonical schema with stable venue/court identity', async () => {
+  const [venue] = discoverVenues({ venues: [venueConfig] });
   const [slot] = await readAvailability({
     venues: [venueConfig],
     date: '2026-09-04',
@@ -196,12 +198,14 @@ test('Intrac availability emits canonical schema with stable venue/court identit
   });
 
   assert.equal(validateCanonicalAvailability(slot.canonical), slot.canonical);
+  assertCanonicalVenueContract(slot, { configuredVenue: venue });
   assert.deepEqual(slot.canonical, {
     provider: 'intrac',
     venue: {
       id: 'fixture-intrac-moore-park',
       name: 'Fixture Moore Park',
       providerVenueId: '72',
+      suburb: 'Moore Park',
     },
     court: {
       id: 'intrac-court-72-479',
@@ -262,6 +266,11 @@ test('Intrac slots flow through existing candidate pipeline', async () => {
   assert.equal(candidate.source.availability.source, 'live');
   assert.equal(candidate.source.availability.availabilityMethod, 'direct_first_party_html');
   assert.equal(candidate.features.price, null);
+  assert.deepEqual(candidate.booking, {
+    url: 'https://parklands.intrac.com.au/book.cfm?location=72&date=2026-09-04&start=14:30&court=479%27',
+    capability: 'date_time_preselected',
+    provider: 'intrac',
+  });
 });
 
 test('Intrac incomplete court id discovery fails explicitly instead of dropping a court', async () => {

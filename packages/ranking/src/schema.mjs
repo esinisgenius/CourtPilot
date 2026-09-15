@@ -127,6 +127,7 @@ function snapshotCandidateFacts(candidate) {
     venue: {
       name: candidate.venue ?? null,
       preferenceMatch: candidate.features?.venuePreference ?? candidate.matches?.venue ?? null,
+      distanceKm: finiteNumberOrNull(candidate.features?.distanceKm),
     },
     accessibility: {
       WALK: modeFact(accessibility, 'WALK'),

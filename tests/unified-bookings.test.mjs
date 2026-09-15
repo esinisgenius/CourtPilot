@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  assertCanonicalVenueContract,
   buildCandidate,
   validateCanonicalAvailability,
 } from '../packages/core/src/index.mjs';
@@ -222,6 +223,7 @@ test('Unified Bookings 120-minute semantics require continuous unblocked time', 
 });
 
 test('Unified Bookings canonical schema and provenance are provider-agnostic', async () => {
+  const [venue] = discoverVenues({ venues: [venueConfig] });
   const [slot] = await readAvailability({
     venues: [venueConfig],
     date: '2026-09-04',
@@ -230,12 +232,14 @@ test('Unified Bookings canonical schema and provenance are provider-agnostic', a
   });
 
   assert.equal(validateCanonicalAvailability(slot.canonical), slot.canonical);
+  assertCanonicalVenueContract(slot, { configuredVenue: venue });
   assert.deepEqual(slot.canonical, {
     provider: 'unified-bookings',
     venue: {
       id: 'fixture-unified-tennis',
       name: 'Fixture Unified Tennis',
       providerVenueId: 'location-uuid',
+      suburb: 'Fixture',
     },
     court: {
       id: 'unified-bookings-court-court-uuid-12',
@@ -253,6 +257,12 @@ test('Unified Bookings canonical schema and provenance are provider-agnostic', a
       amount: null,
       currency: 'AUD',
       confidence: 'unknown',
+    },
+    eligibility: {
+      sport: {
+        type: 'tennis',
+        proof: 'provider_resource',
+      },
     },
     provenance: {
       source: 'live',
@@ -286,6 +296,11 @@ test('Unified Bookings slots flow through existing candidate pipeline', async ()
   assert.equal(candidate.source.availability.source, 'live');
   assert.equal(candidate.source.availability.availabilityMethod, 'derived_first_party');
   assert.equal(candidate.source.canonicalAvailability.court.providerCourtId, 'court-uuid-12');
+  assert.deepEqual(candidate.booking, {
+    url: 'https://booking.fixture.example/booking?uuid=location-uuid',
+    capability: 'booking_page',
+    provider: 'unified-bookings',
+  });
 });
 
 test('Unified Bookings successful zero availability differs from acquisition failure', () => {

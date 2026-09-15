@@ -160,8 +160,17 @@ async function navigateToTennisFacilityList(page, bookingUrl) {
   return page.url();
 }
 
+function isAvailabilityTriggerText(text) {
+  return /\bchoose\b|\bselect\b|availability/i.test(String(text ?? ''))
+    && !/\bbook\b|\breserve\b|login|sign\s*in/i.test(String(text ?? ''));
+}
+
 async function chooseCourtToTriggerAvailability(page, court) {
   const clicked = await page.evaluate((facilityId) => {
+    const isAvailabilityTriggerText = (text) => (
+      /\bchoose\b|\bselect\b|availability/i.test(String(text ?? ''))
+      && !/\bbook\b|\breserve\b|login|sign\s*in/i.test(String(text ?? ''))
+    );
     const facilityNode = document.querySelector(`[data-facilityid="${facilityId}"]`);
     if (!facilityNode) return false;
 
@@ -177,7 +186,7 @@ async function chooseCourtToTriggerAvailability(page, court) {
         candidate.getAttribute('aria-label'),
         candidate.getAttribute('title'),
       ].filter(Boolean).join(' ');
-      return /choose|select|book|availability/i.test(text);
+      return isAvailabilityTriggerText(text);
     });
 
     const target = choose ?? facilityNode;
@@ -197,6 +206,7 @@ export {
   chooseCourtToTriggerAvailability,
   discoverTennisCourtsFromFacilities,
   findCourtFacilities,
+  isAvailabilityTriggerText,
   isLoginPage,
   navigateToTennisFacilityList,
   normalizeConfiguredUrl,

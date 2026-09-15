@@ -39,10 +39,20 @@ export {
   evaluateStartTime,
   evaluateTransport,
   evaluateWeather,
+  isBadWeather,
 } from './constraints.mjs';
 
 export {
+  applyCandidateEligibilityGate,
+  evaluateCandidateEligibility,
+} from './eligibility.mjs';
+
+export {
   attachVenueToCandidate,
+  assertCanonicalVenueContract,
+  assertConfiguredVenueContract,
+  canonicalVenueContractIssues,
+  configuredVenueContractIssues,
   venueToCandidateVenueFeature,
 } from './venues.mjs';
 
@@ -64,3 +74,12 @@ export {
   routeFactStatus,
   transportPreferenceMatchDetail,
 } from './transport-preferences.mjs';
+
+export {
+  addCalendarDays,
+  candidateMatchesTemporalWindow,
+  inferDateRangeFromText,
+  inferTimeWindowFromText,
+  resolveTemporalWindow,
+  temporalWindowDays,
+} from './temporal.mjs';

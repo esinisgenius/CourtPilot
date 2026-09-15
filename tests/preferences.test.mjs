@@ -6,13 +6,19 @@ import { join } from 'node:path';
 import {
   PREFERENCE_VERSION,
   PreferenceInterpreterError,
+  clearProfile,
   assertOpenAiStrictObjectSchema,
   buildInterpreterMessages,
   collectObjectSchemas,
   interpretPreferences,
+  loadProfile,
   loadPreferenceProfile,
+  mergeProfiles,
   normalizePreferenceProfile,
   openAiPreferenceProfileJsonSchema,
+  profileFromPersistentFields,
+  saveProfile,
+  updateProfile,
   validatePreferenceProfile,
 } from '../packages/preferences/src/index.mjs';
 
@@ -60,6 +66,28 @@ async function interpretCase(id, rawProfile) {
 
 function findItem(items, feature) {
   return items.find((item) => item.feature === feature);
+}
+
+function findStructuredItem(profile, feature) {
+  return [...profile.preferences, ...profile.hardConstraints].find((item) => item.feature === feature);
+}
+
+function fakeLocalStorage() {
+  const data = new Map();
+  return {
+    getItem(key) {
+      return data.has(key) ? data.get(key) : null;
+    },
+    setItem(key, value) {
+      data.set(key, String(value));
+    },
+    removeItem(key) {
+      data.delete(key);
+    },
+    clear() {
+      data.clear();
+    },
+  };
 }
 
 function assertNoEquivalentPreferenceForObjective(profile, feature) {
@@ -410,6 +438,23 @@ test('hard and soft relaxable invariants are normalized and validated', () => {
     }),
     (error) => error.issues?.includes('preferences[0].relaxable must be true for soft preferences'),
   );
+});
+
+test('importance and priority aliases are canonicalized before validation', () => {
+  const profile = validatePreferenceProfile(normalizePreferenceProfile(baseProfile({
+    preferences: [{
+      feature: 'weather',
+      type: 'soft',
+      importance: 'medium',
+      priority: 'high',
+      rule: { condition: 'comfortable' },
+      sourceText: '不要太晒',
+    }],
+  })));
+
+  const weather = findItem(profile.preferences, 'weather');
+  assert.equal(weather.importance, 'medium');
+  assert.equal(weather.priority, 'medium');
 });
 
 test('v1 profile normalization compatibility preserves runtime fields', () => {
@@ -805,6 +850,23 @@ test('v2.2 regression: weather preference does not use meaningless higher direct
   );
 });
 
+test('weather sun exposure aliases normalize instead of rejecting the profile', () => {
+  const profile = validatePreferenceProfile(normalizePreferenceProfile(baseProfile({
+    preferences: [{
+      feature: 'weather',
+      type: 'soft',
+      importance: 'medium',
+      direction: 'avoid',
+      rule: { condition: 'not_too_sunny' },
+      sourceText: '不要太晒',
+    }],
+  })));
+
+  const weather = findItem(profile.preferences, 'weather');
+  assert.equal(weather.rule.condition, 'comfortable');
+  assert.equal(weather.direction, 'avoid');
+});
+
 test('case_011 regression: no rain hard weather', async () => {
   const profile = await interpretCase('case_011', baseProfile({
     hardConstraints: [{ feature: 'weather', type: 'hard', importance: 'high', rule: { condition: 'no_rain' }, sourceText: '别下雨就行' }],
@@ -1007,4 +1069,184 @@ test('preference store loads older profiles by normalizing to v2', async () => {
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('missing saved preference profile loads empty default profile', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'tennis-preferences-missing-'));
+  const path = join(dir, 'preferences.json');
+  try {
+    const profile = await loadPreferenceProfile({
+      path,
+      now: new Date('2026-09-10T00:00:00.000Z'),
+    });
+
+    assert.equal(profile.version, 2);
+    assert.equal(profile.searchWindowDays, 7);
+    assert.deepEqual(profile.preferences, []);
+    assert.deepEqual(profile.hardConstraints, []);
+    assert.deepEqual(profile.objectives, []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('browser profile storage saves and loads persistent fields', () => {
+  const storage = fakeLocalStorage();
+  const now = new Date('2026-09-10T00:00:00.000Z');
+  const profile = profileFromPersistentFields({
+    preferredAreas: ['Central'],
+    preferredCourts: ['Court 4', 'Court 5'],
+    avoidedCourts: ['Court 6'],
+    preferredSurfaces: ['synthetic'],
+    priceSensitivity: 'high',
+    preferredTimeWindows: [{ before: '13:00' }, { after: '17:00' }],
+    preferredDurationMinutes: 60,
+  }, { now });
+
+  saveProfile(profile, { storage, now });
+  const loaded = loadProfile({ storage, now });
+
+  assert.equal(loaded.version, 2);
+  assert.deepEqual(findItem(loaded.preferences, 'area').rule.include, ['Central']);
+  assert.deepEqual(findItem(loaded.preferences, 'court').rule.include, ['Court 4', 'Court 5']);
+  assert.deepEqual(findItem(loaded.preferences, 'court').rule.exclude, ['Court 6']);
+  assert.deepEqual(findItem(loaded.preferences, 'surface').rule.include, ['synthetic']);
+  assert.equal(findItem(loaded.preferences, 'price').importance, 'high');
+  assert.equal(findStructuredItem(loaded, 'duration').rule.exactMinutes, 60);
+});
+
+test('browser profile storage reports corrupted JSON', () => {
+  const storage = fakeLocalStorage();
+  storage.setItem('findmycourt.profile.v1', '{bad json');
+
+  assert.throws(
+    () => loadProfile({ storage }),
+    (error) => error.code === 'PROFILE_JSON_CORRUPTED',
+  );
+});
+
+test('browser profile storage treats throwing localStorage getter as unavailable', () => {
+  const hadWindow = Object.prototype.hasOwnProperty.call(globalThis, 'window');
+  const previousWindow = globalThis.window;
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {
+      get localStorage() {
+        throw new Error('localStorage blocked');
+      },
+    },
+  });
+
+  try {
+    assert.equal(loadProfile(), null);
+    assert.equal(clearProfile(), false);
+  } finally {
+    if (hadWindow) {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: previousWindow,
+      });
+    } else {
+      delete globalThis.window;
+    }
+  }
+});
+
+test('browser profile storage clears saved profile', () => {
+  const storage = fakeLocalStorage();
+  const profile = profileFromPersistentFields({ preferredCourts: ['Court 4'] });
+
+  saveProfile(profile, { storage });
+  assert.ok(loadProfile({ storage }));
+  assert.equal(clearProfile({ storage }), true);
+  assert.equal(loadProfile({ storage }), null);
+});
+
+test('session-only current request fields are not persisted', () => {
+  const storage = fakeLocalStorage();
+  const current = normalizePreferenceProfile(baseProfile({
+    searchScope: {
+      days: 1,
+      dateRange: { type: 'tomorrow', sourceText: 'tomorrow' },
+      timeWindow: { after: '17:00' },
+      location: 'Central',
+      sourceText: 'tomorrow after 5 near Central',
+      source: 'user',
+      isExplicit: true,
+    },
+    preferences: [
+      {
+        feature: 'start_time',
+        type: 'soft',
+        importance: 'high',
+        rule: { after: '17:00' },
+        sourceText: 'tomorrow after 5',
+      },
+    ],
+    hardConstraints: [
+      {
+        feature: 'date',
+        type: 'hard',
+        importance: 'high',
+        rule: { dateRange: { type: 'tomorrow', sourceText: 'tomorrow' } },
+        sourceText: 'tomorrow',
+      },
+    ],
+    sourceText: 'tomorrow after 5 near Central',
+  }));
+
+  updateProfile(current, { storage, now: new Date('2026-09-10T00:00:00.000Z') });
+  const loaded = loadProfile({ storage });
+
+  assert.equal(loaded.preferences.some((preference) => preference.feature === 'start_time'), false);
+  assert.equal(loaded.hardConstraints.some((constraint) => constraint.feature === 'date'), false);
+  assert.equal(loaded.searchScope.location, undefined);
+});
+
+test('current request overrides persistent profile for merged runtime profile', () => {
+  const storage = fakeLocalStorage();
+  const now = new Date('2026-09-10T00:00:00.000Z');
+  saveProfile(profileFromPersistentFields({ preferredCourts: ['Court 4'] }, { now }), { storage, now });
+  const current = normalizePreferenceProfile(baseProfile({
+    preferences: [
+      {
+        feature: 'court',
+        type: 'soft',
+        importance: 'high',
+        rule: { include: ['Court 5'] },
+        sourceText: 'today Court 5',
+      },
+    ],
+    sourceText: 'today Court 5',
+  }));
+
+  const merged = updateProfile(current, { storage, now });
+  const savedAfterCurrentRequest = loadProfile({ storage, now });
+
+  assert.deepEqual(findItem(merged.preferences, 'court').rule.include, ['Court 5']);
+  assert.deepEqual(findItem(savedAfterCurrentRequest.preferences, 'court').rule.include, ['Court 4']);
+});
+
+test('mergeProfiles uses current request before persistent profile before defaults', () => {
+  const persistentProfile = profileFromPersistentFields({
+    preferredCourts: ['Court 4'],
+    priceSensitivity: 'low',
+  });
+  const currentRequestProfile = normalizePreferenceProfile(baseProfile({
+    preferences: [
+      {
+        feature: 'price',
+        type: 'soft',
+        importance: 'high',
+        direction: 'lower',
+        sourceText: 'cheap is important',
+      },
+    ],
+  }));
+
+  const merged = mergeProfiles({ persistentProfile, currentRequestProfile });
+
+  assert.deepEqual(findItem(merged.preferences, 'court').rule.include, ['Court 4']);
+  assert.equal(findItem(merged.preferences, 'price').importance, 'high');
+  assert.equal(merged.searchScope.days, 7);
 });
