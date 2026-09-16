@@ -457,7 +457,7 @@ test('hard rejected candidates fail the round only when no feasible candidates r
   assert.equal(evaluation.failedConstraints.length, 10);
 });
 
-test('default weather rejection is visible to replanning evaluation', () => {
+test('default weather warning does not create replanning hard failure', () => {
   const preferences = profile();
   const hardResult = applyHardConstraints({
     candidates: [rainyCandidate({ id: 'rainy-flexible' })],
@@ -470,11 +470,11 @@ test('default weather rejection is visible to replanning evaluation', () => {
     preferences,
   });
 
-  assert.equal(hardResult.accepted.length, 0);
-  assert.equal(evaluation.status, EVALUATOR_STATUS.NO_FEASIBLE_CANDIDATES);
-  assert.equal(evaluation.failedConstraints[0].feature, 'weather');
-  assert.equal(evaluation.failedConstraints[0].reason, 'default_bad_weather');
-  assert.equal(evaluation.reasons.includes('hard_constraints_failed'), true);
+  assert.equal(hardResult.accepted.length, 1);
+  assert.equal(hardResult.rejected.length, 0);
+  assert.equal(hardResult.accepted[0].features.weatherWarning.active, true);
+  assert.notEqual(evaluation.status, EVALUATOR_STATUS.NO_FEASIBLE_CANDIDATES);
+  assert.equal(evaluation.reasons.includes('hard_constraints_failed'), false);
 });
 
 test('multiple high-priority soft violations need replanning', async () => {

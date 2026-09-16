@@ -52,7 +52,6 @@ function candidate({
       localDate: '2026-09-20',
       localTime: startTime.slice(11, 16),
       accessibility,
-      calendar: { free: true, source: 'synthetic' },
       weather: { forecastAvailable: true, precipitationProbability: 0, precipitationMm: 0 },
     },
     source: {
@@ -124,7 +123,6 @@ test('hard rejected candidates do not enter the bounded LLM ranker', async () =>
   const hardFiltered = applyHardConstraints({
     candidates,
     preferenceProfile,
-    defaultCalendarBusyIsHard: true,
   });
   const seenByProvider = [];
 
@@ -161,7 +159,7 @@ test('ranker input contains factual candidate snapshots only', () => {
   assert.equal(input.candidates[0].continuousDurationMinutes, 120);
   assert.equal(input.candidates[0].accessibility.TRANSIT.durationMinutes, 35);
   assert.equal(input.candidates[0].weather.precipitationProbability, 0);
-  assert.equal(input.candidates[0].calendar.free, true);
+  assert.equal(input.candidates[0].calendar, undefined);
   assert.equal(input.candidates[0].source, undefined);
 });
 

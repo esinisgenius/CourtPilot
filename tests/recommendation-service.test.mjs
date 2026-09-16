@@ -534,6 +534,8 @@ test('serialized recommendation includes booking metadata without requiring a UR
         localDate: '2026-09-16',
         localTime: '10:00',
         price: null,
+        calendar: { free: true, source: 'synthetic' },
+        calendarUnknown: true,
       },
       source: {
         provider: 'intrac',
@@ -571,6 +573,8 @@ test('serialized recommendation includes booking metadata without requiring a UR
     capability: 'date_time_preselected',
     provider: 'intrac',
   });
+  assert.equal(Object.hasOwn(withBooking, 'calendar'), false);
+  assert.equal(withBooking.warnings.some((warning) => warning.feature === 'calendar'), false);
   assert.equal(withoutBooking.booking, null);
 });
 
@@ -596,6 +600,10 @@ test('canonical temporal windows feed provider date and time options', () => {
     {
       scope: { sourceText: '下周三', dateRange: { type: 'specific_date', startDate: '2024-06-12', value: 'next Wednesday', sourceText: '下周三' } },
       expected: { dateStart: '2026-09-23', dateEnd: '2026-09-23', timeStart: null, timeEnd: null, days: 1 },
+    },
+    {
+      scope: { sourceText: '下周一', dateRange: { type: 'specific_date', value: '下周一', sourceText: '下周一' } },
+      expected: { dateStart: '2026-09-21', dateEnd: '2026-09-21', timeStart: null, timeEnd: null, days: 1 },
     },
     {
       scope: { sourceText: '最近几天', dateRange: { type: 'next_few_days', sourceText: '最近几天' } },

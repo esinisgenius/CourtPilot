@@ -170,7 +170,7 @@ test('no origin keeps deterministic unavailable accessibility when Maps is unava
   assert.equal(enriched.accessibility.walk.unavailableReason, 'LOCATION_UNRESOLVED');
 });
 
-test('enrichCandidates can attach accessibility after weather and calendar facts', async () => {
+test('enrichCandidates can attach accessibility after weather facts', async () => {
   const [enriched] = await enrichCandidates({
     candidates: [candidate({ id: 'schema' })],
     weatherAdapter: async ({ slots }) => slots.map((slot) => ({
@@ -185,7 +185,6 @@ test('enrichCandidates can attach accessibility after weather and calendar facts
       source: 'test-weather',
       forecastAvailable: true,
     })),
-    calendarAdapter: async () => ({ busy: [] }),
     accessibilityAdapter,
     accessibilityOptions: {
       originText: 'USYD',
@@ -193,7 +192,7 @@ test('enrichCandidates can attach accessibility after weather and calendar facts
   });
 
   assert.equal(enriched.features.weather.temperatureC, 21);
-  assert.equal(enriched.features.calendar.free, true);
+  assert.equal(enriched.features.calendar, undefined);
   assert.equal(enriched.features.accessibility.source, 'google_routes');
 });
 

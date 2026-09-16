@@ -135,7 +135,6 @@ function snapshotCandidateFacts(candidate) {
       DRIVE: modeFact(accessibility, 'DRIVE'),
     },
     weather: cloneJson(candidate.features?.weather),
-    calendar: cloneJson(candidate.features?.calendar),
   };
 }
 

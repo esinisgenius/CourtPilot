@@ -1,4 +1,3 @@
-import { getCalendarBusy, intervalEnd, isCalendarFree } from '../../calendar/src/index.mjs';
 import { canonicalWeatherLocation, resolveCanonicalLocation } from '../../maps/src/index.mjs';
 import { getWeatherForSlots } from '../../weather/src/index.mjs';
 import { enrichCandidateAccessibility } from './accessibility.mjs';
@@ -16,6 +15,12 @@ function candidateSlots(candidates) {
     startTime: candidate.startTime,
     durationMinutes: candidate.durationMinutes,
   }));
+}
+
+function intervalEnd(start, durationMinutes) {
+  const startMs = new Date(start).getTime();
+  if (Number.isNaN(startMs)) throw new Error(`Invalid interval start: ${start}`);
+  return new Date(startMs + durationMinutes * 60 * 1000).toISOString();
 }
 
 function candidateSearchWindow(candidates) {
@@ -227,35 +232,12 @@ async function weatherRowsWithFallback({
   return candidates.map((candidate) => rows.get(candidate.id));
 }
 
-function attachCalendar(candidates, busyIntervals, {
-  status = 'available',
-  source = null,
-  fallbackFrom,
-  fallbackReason,
-} = {}) {
-  return candidates.map((candidate) => ({
-    ...candidate,
-    features: {
-      ...candidate.features,
-      calendar: {
-        free: status === 'available' ? isCalendarFree(candidate, busyIntervals) : null,
-        status,
-        source,
-        ...(fallbackFrom ? { fallbackFrom } : {}),
-        ...(fallbackReason ? { fallbackReason } : {}),
-      },
-    },
-  }));
-}
-
 async function enrichCandidates({
   candidates,
   location = USYD_TENNIS_LOCATION,
   weatherAdapter = getWeatherForSlots,
-  calendarAdapter = getCalendarBusy,
   accessibilityAdapter = null,
   accessibilityOptions = null,
-  timezone = location.timezone,
 } = {}) {
   if (!Array.isArray(candidates)) throw new Error('candidates must be an array');
 
@@ -265,35 +247,7 @@ async function enrichCandidates({
     weatherAdapter,
   });
 
-  let calendarStatus = 'available';
-  let calendarSource = null;
-  let calendarFallbackFrom;
-  let calendarFallbackReason;
-  let busyIntervals = [];
-  const window = candidateSearchWindow(candidates);
-  if (window) {
-    try {
-      const calendar = await calendarAdapter({
-        start: window.start,
-        end: window.end,
-        timezone,
-      });
-      calendarStatus = calendar.status ?? 'available';
-      calendarSource = calendar.source ?? null;
-      calendarFallbackFrom = calendar.fallbackFrom;
-      calendarFallbackReason = calendar.fallbackReason;
-      busyIntervals = calendar.busy ?? [];
-    } catch (error) {
-      calendarStatus = error.code ?? 'calendar_error';
-    }
-  }
-
-  let enriched = attachCalendar(attachWeather(candidates, weatherRows), busyIntervals, {
-    status: calendarStatus,
-    source: calendarSource,
-    fallbackFrom: calendarFallbackFrom,
-    fallbackReason: calendarFallbackReason,
-  });
+  let enriched = attachWeather(candidates, weatherRows);
 
   if (accessibilityOptions) {
     const candidateAccessibilityOptions = {
@@ -311,7 +265,6 @@ async function enrichCandidates({
 
 export {
   USYD_TENNIS_LOCATION,
-  attachCalendar,
   attachWeather,
   candidateSearchWindow,
   candidateSlots,

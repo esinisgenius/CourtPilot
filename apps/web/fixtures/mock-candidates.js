@@ -8,7 +8,6 @@ const fixtureCandidates = [
     nextHourFree: true,
     price: 24,
     temp: 22,
-    calendarFree: true,
     preferredTime: true,
   },
   {
@@ -20,7 +19,6 @@ const fixtureCandidates = [
     nextHourFree: false,
     price: 18,
     temp: 20,
-    calendarFree: true,
     preferredTime: true,
   },
   {
@@ -32,7 +30,6 @@ const fixtureCandidates = [
     nextHourFree: true,
     price: 25,
     temp: 24,
-    calendarFree: true,
     preferredTime: false,
   },
   {
@@ -44,7 +41,6 @@ const fixtureCandidates = [
     nextHourFree: true,
     price: 22,
     temp: 21,
-    calendarFree: false,
     preferredTime: true,
   },
   {
@@ -56,7 +52,6 @@ const fixtureCandidates = [
     nextHourFree: true,
     price: 26,
     temp: 33,
-    calendarFree: true,
     preferredTime: false,
   },
 ];

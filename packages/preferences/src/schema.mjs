@@ -11,7 +11,6 @@ const allowedFeatures = new Set([
   'surface',
   'travel_time',
   'weather',
-  'calendar',
   'duration',
   'consecutive_availability',
   'court_count',
@@ -74,7 +73,6 @@ const relaxationDirectionsByFeature = {
   surface: new Set(['include_nonpreferred', 'ask_user']),
   travel_time: new Set(['longer_travel_time', 'ask_user']),
   weather: new Set(['ask_user']),
-  calendar: new Set(['ask_user']),
   duration: new Set(['shorter_duration', 'ask_user']),
   consecutive_availability: new Set(['shorter_duration', 'wider_time_window', 'ask_user']),
   court_count: new Set(['split_courts', 'ask_user']),
@@ -188,6 +186,10 @@ function normalizeSearchScope(profile) {
   const scope = isPlainObject(profile.searchScope) ? { ...profile.searchScope } : {};
   scope.sourceText = scope.sourceText ?? profile.sourceText ?? '';
   scope.source = scope.source ?? 'user';
+  if (typeof scope.location !== 'string') {
+    const inferredLocation = inferLocationFromText(scope.sourceText);
+    if (inferredLocation) scope.location = inferredLocation;
+  }
   scope.isExplicit = scope.isExplicit ?? hasExplicitSearchScope(scope);
   if (!isPlainObject(scope.dateRange)) {
     const inferredDateRange = inferDateRangeFromText(scope.sourceText);
@@ -622,7 +624,22 @@ function inferDateRangeFromText(text = '') {
   if (text.includes('明天')) return { type: 'tomorrow', sourceText: '明天' };
   if (text.includes('这周') || text.includes('本周')) return { type: 'this_week', sourceText: text.includes('这周') ? '这周' : '本周' };
   if (text.includes('周末')) return { type: 'weekend', sourceText: '周末' };
+  const nextWeekday = text.match(/下周[一二三四五六日天]/);
+  if (nextWeekday) {
+    return { type: 'specific_date', value: nextWeekday[0], sourceText: nextWeekday[0] };
+  }
   if (text.includes('下周')) return { type: 'next_week', sourceText: '下周' };
+  return undefined;
+}
+
+function inferLocationFromText(text = '') {
+  if (!text) return undefined;
+  if (includesAny(text, ['悉大', '悉尼大学', 'usyd', 'sydney uni', 'university of sydney'])) {
+    return '悉尼大学附近';
+  }
+  if (includesAny(text, ['悉尼市区', '市中心', 'cbd', 'downtown', 'city'])) {
+    return 'city';
+  }
   return undefined;
 }
 
@@ -1110,11 +1127,6 @@ function validateWeatherRule(rule, path, issues) {
   validateNumber(rule.maxTemperatureC, `${path}.rule.maxTemperatureC`, issues);
 }
 
-function validateCalendarRule(rule, path, issues) {
-  validateNoUnknownKeys(rule, ['noConflict'], `${path}.rule`, issues);
-  if (rule.noConflict !== undefined && typeof rule.noConflict !== 'boolean') issues.push(`${path}.rule.noConflict must be boolean`);
-}
-
 function validateRuleForFeature(feature, rule, path, issues) {
   if (rule === undefined) return;
   if (!isPlainObject(rule)) {
@@ -1132,7 +1144,6 @@ function validateRuleForFeature(feature, rule, path, issues) {
   if (feature === 'adjacency') return validateAdjacencyRule(rule, path, issues);
   if (feature === 'travel_time') return validateTravelTimeRule(rule, path, issues);
   if (feature === 'weather') return validateWeatherRule(rule, path, issues);
-  if (feature === 'calendar') return validateCalendarRule(rule, path, issues);
   if (feature === 'next_hour_free') return validateNoUnknownKeys(rule, ['preferredMinutes'], `${path}.rule`, issues);
   return undefined;
 }

@@ -1,0 +1,16 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="25" height="25" viewBox="0 0 25 25" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="CourtPilot tennis ball &#194;&#183; clipped" clip-path="url(#clip0_0_8)">
+<path id="Vector" d="M22.4805 5.64727C26.2672 11.159 24.8676 18.6961 19.3562 22.4793C13.8445 26.266 6.30703 24.8672 2.52031 19.3543C-1.26641 13.8426 0.133203 6.30469 5.64531 2.51836C11.157 -1.2668 18.6937 0.132422 22.4773 5.64336" fill="#1E8A1E"/>
+<mask id="mask0_0_8" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="0" y="0" width="25" height="25">
+<path id="Ball-shaped seam mask" d="M22.4805 5.64727C26.2672 11.159 24.8676 18.6961 19.3562 22.4793C13.8445 26.266 6.30703 24.8672 2.52031 19.3543C-1.26641 13.8426 0.133203 6.30469 5.64531 2.51836C11.157 -1.2668 18.6937 0.132422 22.4773 5.64336" fill="#1E8A1E"/>
+</mask>
+<g mask="url(#mask0_0_8)">
+<path id="Vector_2" d="M22.7264 26.5889C22.7264 26.5889 12.4718 11.0889 23.2639 1.67223L24 2C24 2 14.8119 12.1581 24.4718 25.831L22.7264 26.5889ZM5.9718 23.5889C5.9718 23.5889 9.20789 9.92656 6.9718 -0.411142L4.9718 0.588858C4.9718 0.588858 9.4718 12.0889 1.4718 23.5889" fill="white"/>
+</g>
+</g>
+<defs>
+<clipPath id="clip0_0_8">
+<rect width="25" height="25" fill="white"/>
+</clipPath>
+</defs>
+</svg>

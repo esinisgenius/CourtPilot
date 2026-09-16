@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   applyHardConstraints,
-  attachCalendar,
   candidatePreferredTransportModes,
   enrichCandidates,
   evaluateTransport,
@@ -12,6 +11,10 @@ import {
   evaluateCandidateSet,
 } from '../packages/agent/src/index.mjs';
 import { normalizePreferenceProfile } from '../packages/preferences/src/index.mjs';
+
+function attachCalendar(candidates) {
+  return candidates;
+}
 
 function candidate(id, startTime = '2026-09-03T09:00:00.000Z') {
   return {
@@ -150,20 +153,6 @@ function transportProfile({ hard = [], soft = [], transportPreference = {} } = {
     updatedAt: '2026-09-03T00:00:00.000Z',
   });
 }
-
-test('calendar busy candidate is rejected by default hard policy', () => {
-  const [current] = attachCalendar([candidate('busy')], [
-    { start: '2026-09-03T09:30:00.000Z', end: '2026-09-03T10:30:00.000Z' },
-  ]);
-
-  const result = applyHardConstraints({
-    candidates: [current],
-    preferenceProfile: profile(),
-  });
-
-  assert.equal(result.accepted.length, 0);
-  assert.equal(result.rejected[0].reasons[0].reason, 'calendar_conflict');
-});
 
 test('hard maxTransitMinutes rejects only known transit limit violations', () => {
   const current = attachCalendar([
@@ -322,20 +311,6 @@ test('preferred transport mode ranking signal does not forbid unlisted modes', (
   assert.equal(evaluation.weakPreferences.length, 0);
 });
 
-test('calendar free candidate is accepted when no other hard constraint fails', () => {
-  const [current] = attachCalendar([candidate('free')], [
-    { start: '2026-09-03T08:00:00.000Z', end: '2026-09-03T09:00:00.000Z' },
-  ]);
-
-  const result = applyHardConstraints({
-    candidates: [current],
-    preferenceProfile: profile(),
-  });
-
-  assert.equal(result.accepted.length, 1);
-  assert.equal(result.rejected.length, 0);
-});
-
 test('past availability is rejected before ranking for every provider', () => {
   const [past, future] = attachCalendar([
     candidate('past', '2026-09-14T10:00:00+10:00'),
@@ -386,7 +361,6 @@ test('hard start_time constraint rejects before ranking', () => {
       },
     ],
     preferenceProfile,
-    defaultCalendarBusyIsHard: false,
   });
 
   assert.deepEqual(result.accepted.map((item) => item.id), ['valid']);
@@ -448,7 +422,7 @@ test('weather hard no_rain rule rejects rain-like condition even without measure
   assert.equal(result.rejected[0].reasons[0].reason, 'weather_bad_condition');
 });
 
-test('default weather policy rejects rainy outdoor candidates with flexible time', () => {
+test('default weather policy keeps rainy outdoor candidates with warning', () => {
   const current = attachCalendar([
     withWeather(candidate('rain-flexible'), rainyWeather()),
   ], [])[0];
@@ -458,9 +432,10 @@ test('default weather policy rejects rainy outdoor candidates with flexible time
     preferenceProfile: profile(),
   });
 
-  assert.equal(result.accepted.length, 0);
-  assert.equal(result.rejected[0].reasons[0].reason, 'default_bad_weather');
-  assert.equal(result.rejected[0].reasons[0].policy, 'default_product_preference');
+  assert.equal(result.accepted.length, 1);
+  assert.equal(result.rejected.length, 0);
+  assert.equal(result.accepted[0].features.weatherWarning.active, true);
+  assert.equal(result.accepted[0].features.weatherWarning.precipitationProbability, 72);
 });
 
 test('default weather policy keeps dry outdoor candidates', () => {
@@ -539,7 +514,7 @@ test('explicit user time keeps rainy candidate and attaches weather warning', ()
   assert.equal(result.accepted[0].features.weatherWarning.precipitationProbability, 72);
 });
 
-test('replanner-expanded time is not treated as explicit user time for weather override', () => {
+test('replanner-expanded time keeps rainy candidate with warning', () => {
   const current = attachCalendar([
     withWeather(candidate('rain-replanner-time'), rainyWeather()),
   ], [])[0];
@@ -570,8 +545,9 @@ test('replanner-expanded time is not treated as explicit user time for weather o
     preferenceProfile,
   });
 
-  assert.equal(result.accepted.length, 0);
-  assert.equal(result.rejected[0].reasons[0].reason, 'default_bad_weather');
+  assert.equal(result.accepted.length, 1);
+  assert.equal(result.rejected.length, 0);
+  assert.equal(result.accepted[0].features.weatherWarning.active, true);
 });
 
 test('precipitation probability at 50 percent is bad weather boundary', () => {
@@ -589,8 +565,9 @@ test('precipitation probability at 50 percent is bad weather boundary', () => {
     preferenceProfile: profile(),
   });
 
-  assert.equal(result.accepted.length, 0);
-  assert.equal(result.rejected[0].reasons[0].precipitationProbability, 50);
+  assert.equal(result.accepted.length, 1);
+  assert.equal(result.rejected.length, 0);
+  assert.equal(result.accepted[0].features.weatherWarning.precipitationProbability, 50);
 });
 
 test('missing weather data is not treated as bad weather by default policy', () => {
@@ -613,16 +590,6 @@ test('missing weather data is not treated as bad weather by default policy', () 
   assert.equal(result.accepted[0].features.weatherUnknown, true);
 });
 
-test('unknown calendar is not treated as free', () => {
-  const result = applyHardConstraints({
-    candidates: [candidate('unknown-calendar')],
-    preferenceProfile: profile(),
-  });
-
-  assert.equal(result.accepted.length, 0);
-  assert.equal(result.rejected[0].reasons[0].reason, 'calendar_unknown');
-});
-
 test('unknown weather is not treated as good for hard weather constraints', () => {
   const current = attachCalendar([
     withWeather(candidate('unknown-weather'), {
@@ -640,7 +607,7 @@ test('unknown weather is not treated as good for hard weather constraints', () =
   assert.equal(result.rejected[0].reasons[0].reason, 'weather_unknown');
 });
 
-test('enriched candidate schema includes weather and calendar facts', async () => {
+test('enriched candidate schema includes weather facts', async () => {
   const [enriched] = await enrichCandidates({
     candidates: [candidate('schema')],
     weatherAdapter: async ({ slots }) => slots.map((slot) => ({
@@ -655,11 +622,10 @@ test('enriched candidate schema includes weather and calendar facts', async () =
       source: 'test-weather',
       forecastAvailable: true,
     })),
-    calendarAdapter: async () => ({ busy: [] }),
   });
 
   assert.equal(enriched.features.weather.temperatureC, 21);
-  assert.equal(enriched.features.calendar.free, true);
+  assert.equal(enriched.features.calendar, undefined);
 });
 
 test('Strathfield weather unavailable falls back to nearby Burwood weather', async () => {
@@ -706,7 +672,6 @@ test('Strathfield weather unavailable falls back to nearby Burwood weather', asy
         unavailableReason: location.label === 'Burwood' ? undefined : 'forecast_hour_unavailable',
       }));
     },
-    calendarAdapter: async () => ({ busy: [] }),
   });
 
   assert.deepEqual(attempted, ['Strathfield Sports Club Tennis', 'Strathfield', 'Burwood']);
@@ -758,7 +723,6 @@ test('nearby weather unavailable falls back to Sydney weather', async () => {
         unavailableReason: location.label === 'Sydney' ? undefined : 'forecast_hour_unavailable',
       }));
     },
-    calendarAdapter: async () => ({ busy: [] }),
   });
 
   assert.deepEqual(attempted, ['Strathfield', 'Burwood', 'Sydney CBD', 'Sydney']);
@@ -791,17 +755,6 @@ test('soft weather preference keeps candidate when all weather sources are unava
   assert.equal(result.accepted[0].features.weatherUnknown, true);
 });
 
-test('hard filtering returns explainable rejection reasons', () => {
-  const result = applyHardConstraints({
-    candidates: [candidate('unknown-calendar')],
-    preferenceProfile: profile(),
-  });
-
-  assert.deepEqual(result.rejected[0].reasons, [
-    { feature: 'calendar', reason: 'calendar_unknown' },
-  ]);
-});
-
 test('filtered output is compatible with Agent State and evaluator', () => {
   const result = applyHardConstraints({
     candidates: [candidate('unknown-calendar')],
@@ -824,7 +777,8 @@ test('filtered output is compatible with Agent State and evaluator', () => {
     preferences: state.preferences,
   });
 
-  assert.equal(state.rejectedCandidates.length, 1);
-  assert.equal(evaluation.satisfactory, false);
-  assert.equal(evaluation.failedConstraints[0].reason, 'calendar_unknown');
+  assert.equal(state.rejectedCandidates.length, 0);
+  assert.equal(state.candidates.length, 1);
+  assert.equal(state.candidates[0].features.calendarUnknown, undefined);
+  assert.equal(evaluation.failedConstraints.length, 0);
 });

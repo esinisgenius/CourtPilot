@@ -749,7 +749,6 @@ function diversifyRankedCandidates(ranked, { limit = 10, explicitTime = false } 
 function serializeCandidate(entry, index = entry.ranking.rank - 1) {
   const { candidate, ranking } = entry;
   const weather = candidate.features?.weather ?? null;
-  const calendar = candidate.features?.calendar ?? null;
   const accessibility = candidate.features?.accessibility ?? candidate.accessibility ?? null;
   const endTime = endTimeFromStart(candidate.startTime, candidate.durationMinutes);
 
@@ -777,7 +776,6 @@ function serializeCandidate(entry, index = entry.ranking.rank - 1) {
       options: candidate.features?.priceOptions ?? [],
     },
     weather,
-    calendar,
     accessibility,
     reasons: ranking.reasons ?? [],
     tradeoffs: ranking.tradeoffs ?? [],
@@ -1152,7 +1150,6 @@ async function recommendCourts({
       }),
       maxIterations,
       minCandidates,
-      defaultCalendarBusyIsHard: true,
     });
     return serializeRun({ request, profile: runtimeProfile, result, startedAt });
   } catch (error) {

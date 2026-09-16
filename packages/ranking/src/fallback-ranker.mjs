@@ -271,11 +271,6 @@ function compareSignal(a, b, signal, preferenceProfile) {
     if (bMatches === true && aMatches !== true) return 1;
   }
 
-  if (signal.feature === 'calendar') {
-    if (a.calendar?.free === true && b.calendar?.free !== true) return -1;
-    if (b.calendar?.free === true && a.calendar?.free !== true) return 1;
-  }
-
   if (signal.feature === 'weather') {
     return compareNullableNumbers(a.weather?.precipitationProbability, b.weather?.precipitationProbability, 'lower');
   }

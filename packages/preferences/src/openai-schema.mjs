@@ -137,10 +137,6 @@ const weatherRuleSchema = nullableStrictObject({
   maxTemperatureC: nullableNumber,
 });
 
-const calendarRuleSchema = nullableStrictObject({
-  noConflict: nullableBoolean,
-});
-
 const nextHourFreeRuleSchema = nullableStrictObject({
   preferredMinutes: nullableInteger,
 });
@@ -156,7 +152,6 @@ const ruleByFeature = {
   surface: listRuleSchema,
   travel_time: travelTimeRuleSchema,
   weather: weatherRuleSchema,
-  calendar: calendarRuleSchema,
   duration: durationRuleSchema,
   consecutive_availability: consecutiveAvailabilityRuleSchema,
   court_count: courtCountRuleSchema,

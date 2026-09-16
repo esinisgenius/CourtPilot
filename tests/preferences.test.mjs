@@ -560,6 +560,24 @@ test('searchScope validates relative date range and semantic period', () => {
   assert.equal(profile.searchScope.timeWindow.period, 'evening');
 });
 
+test('source text infers next weekday and USYD location search scope', () => {
+  const profile = validatePreferenceProfile(normalizePreferenceProfile(baseProfile({
+    searchScope: {
+      days: 7,
+      sourceText: '下周一我想在悉大或者city打球',
+    },
+  })));
+
+  assert.deepEqual(profile.searchScope.dateRange, {
+    type: 'specific_date',
+    value: '下周一',
+    sourceText: '下周一',
+  });
+  assert.equal(profile.searchScope.days, 1);
+  assert.equal(profile.searchScope.location, '悉尼大学附近');
+  assert.equal(profile.searchScope.isExplicit, true);
+});
+
 test('vague semantic period support avoids fake exact time', () => {
   const profile = validatePreferenceProfile(normalizePreferenceProfile(baseProfile({
     preferences: [

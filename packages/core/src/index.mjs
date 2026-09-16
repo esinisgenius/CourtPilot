@@ -26,7 +26,6 @@ export {
 
 export {
   USYD_TENNIS_LOCATION,
-  attachCalendar,
   attachWeather,
   candidateSearchWindow,
   candidateSlots,
@@ -35,7 +34,6 @@ export {
 
 export {
   applyHardConstraints,
-  evaluateCalendar,
   evaluateStartTime,
   evaluateTransport,
   evaluateWeather,

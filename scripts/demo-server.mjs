@@ -20,8 +20,19 @@ const contentTypes = {
   '.svg': 'image/svg+xml',
 };
 
+function corsHeaders() {
+  return {
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET, HEAD, POST, OPTIONS',
+    'access-control-allow-headers': 'content-type',
+  };
+}
+
 function sendJson(response, statusCode, payload) {
-  response.writeHead(statusCode, { 'content-type': 'application/json; charset=utf-8' });
+  response.writeHead(statusCode, {
+    'content-type': 'application/json; charset=utf-8',
+    ...corsHeaders(),
+  });
   response.end(`${JSON.stringify(payload, null, 2)}\n`);
 }
 
@@ -107,6 +118,7 @@ async function handleStatic(request, response) {
     response.writeHead(200, {
       'content-type': contentTypes[extname(fullPath)] ?? 'application/octet-stream',
       'cache-control': 'no-store',
+      ...corsHeaders(),
     });
     createReadStream(fullPath).pipe(response);
   } catch {
@@ -117,6 +129,12 @@ async function handleStatic(request, response) {
 
 const server = createServer(async (request, response) => {
   try {
+    if (request.method === 'OPTIONS') {
+      response.writeHead(204, corsHeaders());
+      response.end();
+      return;
+    }
+
     if (request.method === 'POST' && new URL(request.url, `http://${host}:${port}`).pathname === '/api/recommend') {
       await handleRecommend(request, response);
       return;

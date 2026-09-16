@@ -188,12 +188,11 @@ async function refreshObservedState(state, observe) {
   });
 }
 
-function applyDeterministicHardFilter(state, { defaultCalendarBusyIsHard = false } = {}) {
+function applyDeterministicHardFilter(state) {
   const current = validateAgentState(state);
   const filtered = applyHardConstraints({
     candidates: current.candidates,
     preferenceProfile: current.preferences,
-    defaultCalendarBusyIsHard,
   });
 
   return validateAgentState({
@@ -242,11 +241,9 @@ async function runReplanningLoop(initialState, {
   maxIterations = 3,
   minCandidates = 1,
   savedAreasPath,
-  defaultCalendarBusyIsHard = false,
 } = {}) {
   let state = applyDeterministicHardFilter(
     await refreshObservedState(validateAgentState(initialState), observe),
-    { defaultCalendarBusyIsHard },
   );
   const iterations = [];
   let latestRanking = { rankedCandidates: [] };
@@ -309,7 +306,6 @@ async function runReplanningLoop(initialState, {
 
     state = applyDeterministicHardFilter(
       await refreshObservedState(nextState, observe),
-      { defaultCalendarBusyIsHard },
     );
   }
 }

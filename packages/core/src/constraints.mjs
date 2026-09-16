@@ -10,10 +10,6 @@ function hasHardConstraint(profile, feature) {
   return hardConstraints(profile).some((constraint) => constraint.feature === feature);
 }
 
-function calendarRequired(profile, { defaultCalendarBusyIsHard = true } = {}) {
-  return defaultCalendarBusyIsHard || hasHardConstraint(profile, 'calendar');
-}
-
 function weatherConstraints(profile) {
   return hardConstraints(profile).filter((constraint) => constraint.feature === 'weather');
 }
@@ -101,32 +97,6 @@ function isOutdoorCourt(candidate) {
   return true;
 }
 
-function explicitUserTimeConstraints(profile) {
-  return hardConstraints(profile).filter((constraint) => constraint.feature === 'start_time'
-    && constraint.source === 'user'
-    && constraint.isExplicit === true
-    && constraint.rule);
-}
-
-function candidateMatchesExplicitUserTime(candidate, preferenceProfile) {
-  const localTime = candidate.features?.localTime;
-  if (typeof localTime !== 'string') return false;
-  return explicitUserTimeConstraints(preferenceProfile)
-    .some((constraint) => matchesStartTimeRule(localTime, constraint.rule) === true);
-}
-
-function weatherPreferenceAllowsBadWeather(preferenceProfile) {
-  const weatherPreference = preferenceProfile?.weatherPreference ?? {};
-  return weatherPreference.userOverride === true
-    || weatherPreference.avoidBadWeather === false;
-}
-
-function defaultWeatherFilteringEnabled(preferenceProfile) {
-  const weatherPreference = preferenceProfile?.weatherPreference;
-  return weatherPreference?.avoidBadWeather !== false
-    && weatherPreference?.userOverride !== true;
-}
-
 function evaluateWeather(candidate, preferenceProfile) {
   const constraints = weatherConstraints(preferenceProfile);
   const weather = candidate.features?.weather;
@@ -178,57 +148,14 @@ function evaluateWeather(candidate, preferenceProfile) {
     weatherUnknown = true;
   } else if (isOutdoorCourt(candidate) && isBadWeather(weather)) {
     warning = weatherWarning(weather);
-
-    if (defaultWeatherFilteringEnabled(preferenceProfile)
-      && !weatherPreferenceAllowsBadWeather(preferenceProfile)
-      && !candidateMatchesExplicitUserTime(candidate, preferenceProfile)) {
-      failures.push({
-        feature: 'weather',
-        reason: 'default_bad_weather',
-        policy: 'default_product_preference',
-        badWeather: true,
-        condition: warning.condition,
-        precipitationProbability: warning.precipitationProbability,
-        weatherCode: warning.weatherCode,
-      });
-    }
   }
 
   return {
     accepted: failures.length === 0,
     failures,
-    warning: failures.some((failure) => failure.reason === 'default_bad_weather') ? null : warning,
+    warning,
     weatherUnknown,
   };
-}
-
-function evaluateCalendar(candidate, preferenceProfile, options = {}) {
-  if (!calendarRequired(preferenceProfile, options)) {
-    return { accepted: true, failures: [] };
-  }
-
-  const calendar = candidate.features?.calendar;
-  if (!calendar || calendar.free === null || calendar.free === undefined) {
-    return {
-      accepted: false,
-      failures: [{
-        feature: 'calendar',
-        reason: 'calendar_unknown',
-      }],
-    };
-  }
-
-  if (calendar.free === false) {
-    return {
-      accepted: false,
-      failures: [{
-        feature: 'calendar',
-        reason: 'calendar_conflict',
-      }],
-    };
-  }
-
-  return { accepted: true, failures: [] };
 }
 
 function candidateStartDate(candidate) {
@@ -525,7 +452,6 @@ function evaluateConsecutiveAvailability(candidate, preferenceProfile) {
 function applyHardConstraints({
   candidates,
   preferenceProfile,
-  defaultCalendarBusyIsHard = true,
   now,
 } = {}) {
   if (!Array.isArray(candidates)) throw new Error('candidates must be an array');
@@ -537,7 +463,6 @@ function applyHardConstraints({
     const weatherEvaluation = evaluateWeather(candidate, preferenceProfile);
     const reasons = [
       ...evaluateAvailabilityNotPast(candidate, preferenceProfile, { now }).failures,
-      ...evaluateCalendar(candidate, preferenceProfile, { defaultCalendarBusyIsHard }).failures,
       ...weatherEvaluation.failures,
       ...evaluateTransport(candidate, preferenceProfile).failures,
       ...evaluateStartTime(candidate, preferenceProfile).failures,
@@ -561,7 +486,6 @@ function applyHardConstraints({
 export {
   applyHardConstraints,
   evaluateAvailabilityNotPast,
-  evaluateCalendar,
   evaluateConsecutiveAvailability,
   evaluateDate,
   evaluateStartTime,

@@ -21,7 +21,7 @@ const persistentFeatures = new Set([
   'consecutive_availability',
 ]);
 
-const sessionOnlyFeatures = new Set(['date', 'calendar', 'court_count', 'adjacency']);
+const sessionOnlyFeatures = new Set(['date', 'court_count', 'adjacency']);
 
 const sessionTextPattern = new RegExp([
   'today',

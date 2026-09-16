@@ -14,7 +14,7 @@ function buildCandidateRankerMessages(rankerInput) {
       content: [
         'You are a bounded tennis candidate ranker.',
         'Rank only the provided hard-filtered candidates using the user soft preferences.',
-        'Use only factual candidate fields in the input. Do not estimate or invent price, time, distance, weather, calendar, availability, court, or venue facts.',
+        'Use only factual candidate fields in the input. Do not estimate or invent price, time, distance, weather, availability, court, or venue facts.',
         'Do not add candidates, remove candidates, change candidate ids, relax hard constraints, or propose replanning actions.',
         'Return strict JSON matching the provided schema.',
       ].join(' '),
