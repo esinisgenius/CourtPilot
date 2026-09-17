@@ -51,6 +51,31 @@ test('explicit Burwood location routes initial provider scope to configured Burw
   assert.deepEqual(routedScope.targetLocation.center, { lat: -33.8775, lng: 151.1035 });
 });
 
+test('explicit CBD provider options never fall back to all Bookable venues', () => {
+  const routedScope = searchScopeForProfile({
+    searchScope: {
+      days: 7,
+      location: 'city',
+      locationSource: 'explicit',
+    },
+  });
+  const stateWithInvalidExpansion = {
+    searchScope: {
+      ...routedScope,
+      providerScope: {
+        ...routedScope.providerScope,
+        activeProviderIds: [...routedScope.providerScope.activeProviderIds, 'bookable'],
+      },
+    },
+    preferences: { searchScope: routedScope },
+  };
+
+  const options = providerOptionsForState(stateWithInvalidExpansion);
+
+  assert.deepEqual(options.bookable.venues, []);
+  assert.equal(options.susf.venues.some((venue) => venue.id === 'susf-tennis'), true);
+});
+
 test('temporal specificity treats narrow canonical windows as explicit', () => {
   const result = classifyTemporalSpecificity({
     searchScope: {
@@ -534,8 +559,6 @@ test('serialized recommendation includes booking metadata without requiring a UR
         localDate: '2026-09-16',
         localTime: '10:00',
         price: null,
-        calendar: { free: true, source: 'synthetic' },
-        calendarUnknown: true,
       },
       source: {
         provider: 'intrac',
@@ -573,8 +596,6 @@ test('serialized recommendation includes booking metadata without requiring a UR
     capability: 'date_time_preselected',
     provider: 'intrac',
   });
-  assert.equal(Object.hasOwn(withBooking, 'calendar'), false);
-  assert.equal(withBooking.warnings.some((warning) => warning.feature === 'calendar'), false);
   assert.equal(withoutBooking.booking, null);
 });
 

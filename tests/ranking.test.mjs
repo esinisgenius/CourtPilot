@@ -159,7 +159,6 @@ test('ranker input contains factual candidate snapshots only', () => {
   assert.equal(input.candidates[0].continuousDurationMinutes, 120);
   assert.equal(input.candidates[0].accessibility.TRANSIT.durationMinutes, 35);
   assert.equal(input.candidates[0].weather.precipitationProbability, 0);
-  assert.equal(input.candidates[0].calendar, undefined);
   assert.equal(input.candidates[0].source, undefined);
 });
 

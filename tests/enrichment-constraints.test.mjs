@@ -12,7 +12,7 @@ import {
 } from '../packages/agent/src/index.mjs';
 import { normalizePreferenceProfile } from '../packages/preferences/src/index.mjs';
 
-function attachCalendar(candidates) {
+function candidateBatch(candidates) {
   return candidates;
 }
 
@@ -155,7 +155,7 @@ function transportProfile({ hard = [], soft = [], transportPreference = {} } = {
 }
 
 test('hard maxTransitMinutes rejects only known transit limit violations', () => {
-  const current = attachCalendar([
+  const current = candidateBatch([
     withAccessibility(candidate('too-far'), accessibility({ transitMinutes: 35 })),
   ], [])[0];
   const result = applyHardConstraints({
@@ -178,7 +178,7 @@ test('hard maxTransitMinutes rejects only known transit limit violations', () =>
 });
 
 test('hard transport missing accessibility is distinct from exceeding the limit', () => {
-  const current = attachCalendar([candidate('missing-accessibility')], [])[0];
+  const current = candidateBatch([candidate('missing-accessibility')], [])[0];
   const result = evaluateTransport(current, transportProfile({
     hard: [{
       feature: 'travel_time',
@@ -237,7 +237,7 @@ test('origin missing and provider error accessibility are distinct factual failu
 });
 
 test('soft maxTransitMinutes does not hard reject candidates over the preferred limit', () => {
-  const current = attachCalendar([
+  const current = candidateBatch([
     withAccessibility(candidate('soft-far'), accessibility({ transitMinutes: 35 })),
   ], [])[0];
   const preferenceProfile = transportProfile({
@@ -312,7 +312,7 @@ test('preferred transport mode ranking signal does not forbid unlisted modes', (
 });
 
 test('past availability is rejected before ranking for every provider', () => {
-  const [past, future] = attachCalendar([
+  const [past, future] = candidateBatch([
     candidate('past', '2026-09-14T10:00:00+10:00'),
     candidate('future', '2026-09-14T20:00:00+10:00'),
   ], []);
@@ -369,7 +369,7 @@ test('hard start_time constraint rejects before ranking', () => {
 });
 
 test('weather hard constraint rejects precipitation', () => {
-  const current = attachCalendar([
+  const current = candidateBatch([
     withWeather(candidate('rain'), {
       forecastAvailable: true,
       precipitationMm: 1.2,
@@ -387,7 +387,7 @@ test('weather hard constraint rejects precipitation', () => {
 });
 
 test('weather hard no_rain rule rejects rain-like condition even without measured precipitation', () => {
-  const current = attachCalendar([
+  const current = candidateBatch([
     withWeather(candidate('rain-condition'), rainyWeather({
       precipitationMm: 0,
       precipitationProbability: 10,
@@ -423,7 +423,7 @@ test('weather hard no_rain rule rejects rain-like condition even without measure
 });
 
 test('default weather policy keeps rainy outdoor candidates with warning', () => {
-  const current = attachCalendar([
+  const current = candidateBatch([
     withWeather(candidate('rain-flexible'), rainyWeather()),
   ], [])[0];
 
@@ -439,7 +439,7 @@ test('default weather policy keeps rainy outdoor candidates with warning', () =>
 });
 
 test('default weather policy keeps dry outdoor candidates', () => {
-  const current = attachCalendar([
+  const current = candidateBatch([
     withWeather(candidate('dry'), dryWeather()),
   ], [])[0];
 
@@ -453,7 +453,7 @@ test('default weather policy keeps dry outdoor candidates', () => {
 });
 
 test('user says rain is okay so rainy candidate is not weather-filtered', () => {
-  const current = attachCalendar([
+  const current = candidateBatch([
     withWeather(candidate('rain-ok'), rainyWeather()),
   ], [])[0];
 
@@ -479,7 +479,7 @@ test('user says rain is okay so rainy candidate is not weather-filtered', () => 
 });
 
 test('explicit user time keeps rainy candidate and attaches weather warning', () => {
-  const current = attachCalendar([
+  const current = candidateBatch([
     withWeather(candidate('rain-explicit-time'), rainyWeather()),
   ], [])[0];
   const preferenceProfile = normalizePreferenceProfile({
@@ -515,7 +515,7 @@ test('explicit user time keeps rainy candidate and attaches weather warning', ()
 });
 
 test('replanner-expanded time keeps rainy candidate with warning', () => {
-  const current = attachCalendar([
+  const current = candidateBatch([
     withWeather(candidate('rain-replanner-time'), rainyWeather()),
   ], [])[0];
   const preferenceProfile = normalizePreferenceProfile({
@@ -551,7 +551,7 @@ test('replanner-expanded time keeps rainy candidate with warning', () => {
 });
 
 test('precipitation probability at 50 percent is bad weather boundary', () => {
-  const current = attachCalendar([
+  const current = candidateBatch([
     withWeather(candidate('rain-boundary'), rainyWeather({
       condition: 'cloudy',
       precipitationMm: 0,
@@ -571,7 +571,7 @@ test('precipitation probability at 50 percent is bad weather boundary', () => {
 });
 
 test('missing weather data is not treated as bad weather by default policy', () => {
-  const current = attachCalendar([
+  const current = candidateBatch([
     withWeather(candidate('weather-missing'), {
       forecastAvailable: false,
       precipitationProbability: null,
@@ -591,7 +591,7 @@ test('missing weather data is not treated as bad weather by default policy', () 
 });
 
 test('unknown weather is not treated as good for hard weather constraints', () => {
-  const current = attachCalendar([
+  const current = candidateBatch([
     withWeather(candidate('unknown-weather'), {
       forecastAvailable: false,
       precipitationMm: null,
@@ -625,7 +625,6 @@ test('enriched candidate schema includes weather facts', async () => {
   });
 
   assert.equal(enriched.features.weather.temperatureC, 21);
-  assert.equal(enriched.features.calendar, undefined);
 });
 
 test('Strathfield weather unavailable falls back to nearby Burwood weather', async () => {
@@ -733,7 +732,7 @@ test('nearby weather unavailable falls back to Sydney weather', async () => {
 });
 
 test('soft weather preference keeps candidate when all weather sources are unavailable', () => {
-  const current = attachCalendar([
+  const current = candidateBatch([
     withWeather(candidate('soft-weather-unavailable'), {
       forecastAvailable: false,
       precipitationProbability: null,
@@ -757,7 +756,7 @@ test('soft weather preference keeps candidate when all weather sources are unava
 
 test('filtered output is compatible with Agent State and evaluator', () => {
   const result = applyHardConstraints({
-    candidates: [candidate('unknown-calendar')],
+    candidates: [candidate('fixture-candidate')],
     preferenceProfile: profile(),
   });
   const state = createInitialAgentState({
@@ -779,6 +778,5 @@ test('filtered output is compatible with Agent State and evaluator', () => {
 
   assert.equal(state.rejectedCandidates.length, 0);
   assert.equal(state.candidates.length, 1);
-  assert.equal(state.candidates[0].features.calendarUnknown, undefined);
   assert.equal(evaluation.failedConstraints.length, 0);
 });

@@ -191,7 +191,6 @@ function candidateForFixture(raw, profile) {
       price: Number.isFinite(raw.price) ? raw.price : null,
       currency: Number.isFinite(raw.price) ? 'AUD' : null,
       accessibility,
-      calendar: { free: raw.calendarFree ?? true },
       weather: raw.weather ?? { forecastAvailable: true, precipitationMm: 0 },
       courtPreference,
     },
@@ -235,7 +234,6 @@ function applyDeterministicHardFilter(state) {
   const filtered = applyHardConstraints({
     candidates: state.candidates,
     preferenceProfile: state.preferences,
-    defaultCalendarBusyIsHard: false,
   });
 
   return {
@@ -390,7 +388,6 @@ function candidateFromFactualSnapshot(snapshot) {
       accessibility,
       courtPreference: snapshot.court?.preferenceMatch ?? null,
       venuePreference: snapshot.venue?.preferenceMatch ?? null,
-      calendar: snapshot.calendar ?? null,
       weather: snapshot.weather ?? null,
     },
   };

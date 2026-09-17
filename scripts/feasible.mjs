@@ -59,7 +59,6 @@ function summarizeCandidate(candidate) {
     price: candidate.features.price,
     priceOptions: candidate.features.priceOptions,
     weather: candidate.features.weather,
-    calendar: candidate.features.calendar,
   };
 }
 
@@ -87,15 +86,6 @@ const enriched = await enrichCandidates({
       forecastAvailable: true,
     }))
     : undefined,
-  calendarAdapter: syntheticMode
-    ? async () => ({
-      source: 'synthetic',
-      status: 'available',
-      busy: [
-        { start: '2026-09-03T09:15:00.000Z', end: '2026-09-03T09:45:00.000Z' },
-      ],
-    })
-    : undefined,
 });
 const { accepted, rejected } = applyHardConstraints({
   candidates: enriched,
@@ -108,8 +98,6 @@ console.log(JSON.stringify({
   susfCandidates: summary.total,
   byCourt: summary.byCourt,
   weatherEnriched: enriched.length,
-  calendarConflicts: rejectionCount(rejected, 'calendar', 'calendar_conflict'),
-  calendarUnknown: rejectionCount(rejected, 'calendar', 'calendar_unknown'),
   weatherHardRejects: rejectionCount(rejected, 'weather'),
   feasible: accepted.length,
   topFeasible: accepted.slice(0, 10).map(summarizeCandidate),

@@ -74,7 +74,7 @@ export {
 } from './transport-preferences.mjs';
 
 export {
-  addCalendarDays,
+  addDays,
   candidateMatchesTemporalWindow,
   inferDateRangeFromText,
   inferTimeWindowFromText,

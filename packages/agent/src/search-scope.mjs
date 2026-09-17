@@ -102,9 +102,21 @@ function shiftTimeWindow(state) {
 
 function expandVenueSet(state) {
   const current = withNormalizedSearchScope(state);
-  const providerId = nextExpandableProviderId(current.searchScope.providerScope);
+  const explicitRouting = current.searchScope.locationSource === 'explicit'
+    && current.searchScope.locationRouting?.status === 'matched_geographic_scope';
+  const geographicallyMatchedProviderIds = current.searchScope.locationRouting?.activeProviderIds ?? [];
+  const expansionScope = explicitRouting
+    ? {
+      ...current.searchScope.providerScope,
+      expandableProviderIds: current.searchScope.providerScope.expandableProviderIds
+        .filter((providerId) => geographicallyMatchedProviderIds.includes(providerId)),
+    }
+    : current.searchScope.providerScope;
+  const providerId = nextExpandableProviderId(expansionScope);
   if (!providerId) {
-    throw new Error('No configured provider expansion remains in the search scope');
+    throw new Error(explicitRouting
+      ? 'No geographically matched provider expansion remains for the explicit location'
+      : 'No configured provider expansion remains in the search scope');
   }
 
   return {

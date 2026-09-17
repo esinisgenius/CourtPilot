@@ -112,6 +112,18 @@ function providerOptionsForState(state) {
   const availabilityOptions = {};
   const matchedByProvider = state.searchScope?.locationRouting?.matchedVenuesByProvider ?? {};
 
+  if (state.searchScope?.locationSource === 'explicit'
+    && state.searchScope?.locationRouting?.status === 'matched_geographic_scope') {
+    const activeProviderIds = state.searchScope?.providerScope?.activeProviderIds ?? [];
+    for (const providerId of activeProviderIds) {
+      availabilityOptions[providerId] = {
+        ...baseOptions,
+        venues: matchedByProvider[providerId] ?? [],
+      };
+    }
+    return availabilityOptions;
+  }
+
   for (const [providerId, venues] of Object.entries(matchedByProvider)) {
     availabilityOptions[providerId] = {
       ...baseOptions,

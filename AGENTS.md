@@ -121,7 +121,6 @@ Hard constraints are enforced by deterministic code.
 
 Examples:
 
-- Calendar conflict
 - Explicit user rule such as "I absolutely will not play in rain"
 - Unavailable court
 
@@ -173,8 +172,7 @@ Candidate Builder must compute factual attributes with code/API calls:
   "nextHourAlsoAvailable": true,
   "price": null,
   "preferredTime": true,
-  "weather": null,
-  "calendarFree": true
+  "weather": null
 }
 ```
 
@@ -280,7 +278,6 @@ find next tennis session
   -> build candidates
   -> extract deterministic features
   -> call Weather
-  -> call Calendar
   -> enforce hard constraints
   -> reduce candidate set
   -> call preference ranker
@@ -293,7 +290,7 @@ If candidate quality is poor, the agent may:
 - In a future version, search other venues
 - Ask whether the user wants to relax a soft preference
 
-The agent must not compute factual availability, price, weather, or calendar status with language-model guesses.
+The agent must not compute factual availability, price, or weather status with language-model guesses.
 
 ## 10. MCP Architecture
 
@@ -310,7 +307,6 @@ Tennis MCP Server
       |
       +-- get_susf_availability
       +-- get_tennis_weather
-      +-- get_calendar_busy
       +-- evaluate_candidates
               |
               v
@@ -486,7 +482,7 @@ Do not run them consecutively unless there is a clear need. A single real availa
 - Candidate Core
 - Preference preview
 - Ranking
-- Future Weather / Calendar enrichment
+- Future Weather enrichment
 
 Do not fetch SUSF again merely because execution has moved into a different pipeline stage.
 
@@ -545,15 +541,14 @@ MVP must support:
 3. SUSF Court 4 / 5 / 6 availability
 4. `nextHourAlsoAvailable`
 5. Weather
-6. Calendar hard filtering
-7. Candidate feature extraction
-8. LLM soft-preference ranking
-9. Deterministic fallback
-10. Top 3 recommendation
-11. MCP Server
-12. Minimal CLI/Web UI
-13. Basic eval
-14. README and architecture diagram
+6. Candidate feature extraction
+7. LLM soft-preference ranking
+8. Deterministic fallback
+9. Top 3 recommendation
+10. MCP Server
+11. Minimal CLI/Web UI
+12. Basic eval
+13. README and architecture diagram
 
 Explicitly out of scope:
 
@@ -611,7 +606,6 @@ load preferences
   -> SUSF availability
   -> candidate feature extraction
   -> Weather
-  -> Calendar
   -> hard filter
   -> LLM preference ranking
   -> Top 3
@@ -625,7 +619,6 @@ Final Top 3 should display at least:
 - `nextHourAlsoAvailable`
 - Price, only when truly fetched
 - Weather
-- Calendar status
 - Reasons
 - Uncertainty, when present
 

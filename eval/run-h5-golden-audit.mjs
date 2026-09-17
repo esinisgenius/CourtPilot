@@ -219,10 +219,6 @@ async function fixtureWeatherAdapter({ location, slots }) {
   });
 }
 
-async function fixtureCalendarAdapter() {
-  return { status: 'available', source: 'fixture-calendar', busy: [] };
-}
-
 async function observeFixtureCandidates(state, options = {}) {
   const observed = await observeConfiguredAvailabilityProviders(state, {
     providerFetchers: makeProviderFetchers(options),
@@ -232,7 +228,6 @@ async function observeFixtureCandidates(state, options = {}) {
   const enriched = await enrichCandidates({
     candidates: observed.candidates,
     weatherAdapter: fixtureWeatherAdapter,
-    calendarAdapter: fixtureCalendarAdapter,
     accessibilityOptions: observed.preferences?.searchScope?.travelOrigin ? { originText: observed.preferences.searchScope.travelOrigin.text } : null,
   });
   const eligibility = applyCandidateEligibilityGate({
@@ -297,7 +292,6 @@ function traceRun(caseDef, profile, result) {
     ?? null;
   const canonical = rawLocationExpression ? resolveCanonicalLocation(rawLocationExpression) : null;
   const hardRejects = result.state.rejectedCandidates.flatMap((entry) => entry.reasons ?? [])
-    .filter((reason) => ['calendar', 'weather', 'travel_time', 'start_time'].includes(reason.feature));
   const eligibilityRejects = result.state.rejectedCandidates.flatMap((entry) => entry.reasons ?? [])
     .filter((reason) => ['sport', 'geography'].includes(reason.feature));
   const rankedIds = result.rankedCandidates.map((item) => item.candidateId);
@@ -369,7 +363,6 @@ function traceRun(caseDef, profile, result) {
       nextHourAlsoAvailable: candidate.features?.nextHourFree,
       price: candidate.features?.price,
       weather: candidate.features?.weather ?? null,
-      calendar: candidate.features?.calendar ?? null,
     })),
     finalAgentStatus: result.status,
     uiOutput: caseDef.uiOutput ?? uiOutputFor(result),
@@ -637,7 +630,6 @@ async function runCase(caseDef) {
     observe: (state) => observeFixtureCandidates(state, caseDef.providerOptions ?? {}),
     maxIterations: 2,
     minCandidates: 1,
-    defaultCalendarBusyIsHard: true,
   });
   const trace = traceRun(caseDef, profile, result);
   const pass = Boolean(caseDef.expect(trace));
@@ -694,7 +686,7 @@ function issueCatalog(results) {
       severity: 'P1',
       layer: 'hard constraints',
       title: 'Date/day and continuous-duration hard semantics are not enforced.',
-      rootCause: 'applyHardConstraints currently evaluates calendar, weather, transport, and start_time only; it does not evaluate date/dateRange or consecutive_availability.',
+      rootCause: 'applyHardConstraints evaluates weather, transport, and start_time, but does not evaluate date/dateRange or consecutive_availability.',
       cases: failed.filter((result) => ['T15', 'T17'].some((id) => result.id.startsWith(id))).map((result) => result.id),
     },
     {

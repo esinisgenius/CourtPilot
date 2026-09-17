@@ -13,6 +13,7 @@ import {
   evaluateCandidateSet,
   evaluateCurrentCandidateSet,
   evaluateReplanningContext,
+  expandVenueSet,
   runReplanningLoop,
   observeConfiguredAvailabilityProviders,
   shiftTimeWindow,
@@ -187,12 +188,12 @@ function availabilitySlot({
 test('hard constraint is normalized as non-relaxable and cannot validate as relaxable', () => {
   const normalized = profile([], [
     {
-      feature: 'calendar',
+      feature: 'weather',
       type: 'hard',
       priority: 'high',
       importance: 'high',
       relaxable: true,
-      sourceText: 'must not conflict with calendar',
+      sourceText: 'must not play in rain',
     },
   ]);
 
@@ -401,7 +402,6 @@ test('no hard-feasible candidates returns NO_FEASIBLE_CANDIDATES', () => {
   const hardResult = applyHardConstraints({
     candidates: [accessibleCandidate({ id: 'too-far', transitMinutes: 45 })],
     preferenceProfile: preferences,
-    defaultCalendarBusyIsHard: false,
   });
   const evaluation = evaluateCandidateSet({
     candidates: hardResult.accepted,
@@ -462,7 +462,6 @@ test('default weather warning does not create replanning hard failure', () => {
   const hardResult = applyHardConstraints({
     candidates: [rainyCandidate({ id: 'rainy-flexible' })],
     preferenceProfile: preferences,
-    defaultCalendarBusyIsHard: false,
   });
   const evaluation = evaluateCandidateSet({
     candidates: hardResult.accepted,
@@ -1109,6 +1108,31 @@ test('SUSF provider can use a wider timeout than lightweight providers', async (
   assert.equal(observations.find((item) => item.providerId === 'bookable').status, 'timed_out');
 });
 
+test('explicit location prevents provider expansion outside geographic routing', () => {
+  const currentState = state({
+    candidates: [],
+    searchScope: {
+      locationSource: 'explicit',
+      locationRouting: {
+        status: 'matched_geographic_scope',
+        activeProviderIds: ['susf'],
+        matchedVenuesByProvider: {
+          susf: [{ id: 'susf-tennis', provider: 'susf' }],
+        },
+      },
+      providerScope: {
+        activeProviderIds: ['susf'],
+        expandableProviderIds: ['bookable'],
+      },
+    },
+  });
+
+  assert.throws(
+    () => expandVenueSet(currentState),
+    /No geographically matched provider expansion remains/,
+  );
+});
+
 test('duplicate provider expansion is rejected deterministically', async () => {
   const currentState = state({
     candidates: [],
@@ -1180,7 +1204,6 @@ test('soft transport preference can remain satisfactory without hard rejecting a
   const hardResult = applyHardConstraints({
     candidates: currentState.candidates,
     preferenceProfile: preferences,
-    defaultCalendarBusyIsHard: false,
   });
   const evaluation = evaluateCandidateSet({
     candidates: hardResult.accepted,
@@ -1209,7 +1232,6 @@ test('hard transport constraint rejects before replanner can relax it', () => {
   const hardResult = applyHardConstraints({
     candidates: [accessibleCandidate({ id: 'hard-transit-35', transitMinutes: 35 })],
     preferenceProfile: preferences,
-    defaultCalendarBusyIsHard: false,
   });
 
   assert.equal(hardResult.accepted.length, 0);
@@ -1289,7 +1311,6 @@ test('eval: farther-is-ok transit preference is not a hard reject with real cand
   const hardResult = applyHardConstraints({
     candidates: [realCandidateFacts],
     preferenceProfile: preferences,
-    defaultCalendarBusyIsHard: false,
   });
   const evaluation = evaluateCandidateSet({
     candidates: hardResult.accepted,

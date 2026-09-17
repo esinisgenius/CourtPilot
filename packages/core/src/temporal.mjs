@@ -50,7 +50,7 @@ const RELATIVE_DAY_OFFSETS = Object.freeze({
   后天: 2,
 });
 
-function addCalendarDays(isoDate, days) {
+function addDays(isoDate, days) {
   const match = String(isoDate).match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return null;
   const [, year, month, day] = match;
@@ -82,11 +82,11 @@ function nextWeekdayDate(targetWeekday, today, { nextWeek = false } = {}) {
   const current = weekdayIndex(today);
   if (current === null || targetWeekday === null || targetWeekday === undefined) return null;
   if (nextWeek) {
-    const monday = addCalendarDays(today, 1 - current + (current === 0 ? -6 : 0));
-    return addCalendarDays(monday, 7 + targetWeekday - 1);
+    const monday = addDays(today, 1 - current + (current === 0 ? -6 : 0));
+    return addDays(monday, 7 + targetWeekday - 1);
   }
   const delta = (targetWeekday - current + 7) % 7;
-  return addCalendarDays(today, delta);
+  return addDays(today, delta);
 }
 
 function weekdayFromText(text = '') {
@@ -210,7 +210,7 @@ function resolveDateWindow(dateRange, { now = new Date(), sourceText = '' } = {}
   if (semantic.kind === 'unspecified') return { dateStart: null, dateEnd: null, source: 'unspecified' };
   if (semantic.kind === 'explicit_date') return { dateStart: semantic.date, dateEnd: semantic.date, source: 'explicit' };
   if (semantic.kind === 'relative_day_offset') {
-    const date = addCalendarDays(today, semantic.offsetDays);
+    const date = addDays(today, semantic.offsetDays);
     return { dateStart: date, dateEnd: date, source: 'relative' };
   }
   if (semantic.kind === 'weekday') {
@@ -224,18 +224,18 @@ function resolveDateWindow(dateRange, { now = new Date(), sourceText = '' } = {}
   }
   if (semantic.kind === 'relative_range') {
     return {
-      dateStart: addCalendarDays(today, semantic.startOffsetDays),
-      dateEnd: addCalendarDays(today, semantic.endOffsetDays),
+      dateStart: addDays(today, semantic.startOffsetDays),
+      dateEnd: addDays(today, semantic.endOffsetDays),
       source: 'range',
     };
   }
   if (semantic.kind === 'weekend') {
     const saturday = nextWeekdayDate(6, today);
-    return { dateStart: saturday, dateEnd: addCalendarDays(saturday, 1), source: 'range' };
+    return { dateStart: saturday, dateEnd: addDays(saturday, 1), source: 'range' };
   }
   if (semantic.kind === 'week_range') {
     const start = nextWeekdayDate(1, today, { nextWeek: true });
-    return { dateStart: start, dateEnd: addCalendarDays(start, 6), source: 'range' };
+    return { dateStart: start, dateEnd: addDays(start, 6), source: 'range' };
   }
   return { dateStart: null, dateEnd: null, source: 'unresolved' };
 }
@@ -320,7 +320,7 @@ function candidateMatchesTemporalWindow(candidate, temporalWindow = {}) {
 }
 
 export {
-  addCalendarDays,
+  addDays,
   candidateMatchesTemporalWindow,
   inferDateRangeFromText,
   inferTimeWindowFromText,

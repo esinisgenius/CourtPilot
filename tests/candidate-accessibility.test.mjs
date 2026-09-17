@@ -192,7 +192,6 @@ test('enrichCandidates can attach accessibility after weather facts', async () =
   });
 
   assert.equal(enriched.features.weather.temperatureC, 21);
-  assert.equal(enriched.features.calendar, undefined);
   assert.equal(enriched.features.accessibility.source, 'google_routes');
 });
 

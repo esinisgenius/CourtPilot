@@ -4,7 +4,7 @@ A preference-aware tennis court search agent for Sydney that can diagnose failed
 
 ## Problem
 
-Tennis court search is awkward because availability is fragmented across providers, and the user's real preferences are often fuzzy or conflicting: price, travel time, preferred courts, time windows, weather, calendar conflicts, and whether two continuous hours are available. A fixed filter workflow can easily return no result without knowing which preference to relax next.
+Tennis court search is awkward because availability is fragmented across providers, and the user's real preferences are often fuzzy or conflicting: price, travel time, preferred courts, time windows, weather, and whether two continuous hours are available. A fixed filter workflow can easily return no result without knowing which preference to relax next.
 
 TennisAgent treats explicit constraints as rules and soft preferences as trade-offs. The LLM helps interpret and reason about ambiguous preferences, while code owns factual checks, filtering, bounded replanning, and termination.
 
@@ -143,7 +143,6 @@ These evals are regression coverage for a bounded scenario set, not proof of uni
 - Playwright for authenticated SUSF / PerfectMind availability access
 - OpenAI structured output for preference interpretation and optional LLM ranking/replanning
 - Open-Meteo weather enrichment
-- Apple Calendar EventKit and Google Calendar FreeBusy adapters
 - Google Maps Platform adapters for location, venue, and travel-time facts
 - Node's built-in test runner
 
@@ -156,7 +155,6 @@ packages/preferences  Preference Profile schema, interpreter, local store
 packages/ranking      LLM ranker interface and deterministic fallback ranker
 packages/susf         SUSF / PerfectMind availability adapter
 packages/weather      Open-Meteo adapter and cache
-packages/calendar     Apple EventKit and Google FreeBusy adapters
 packages/maps         location, venue discovery, travel time, saved play areas
 packages/bookable     provider adapter
 packages/sportlogic   provider adapter
@@ -183,14 +181,14 @@ npm run preference:show
 npm run feasible:synthetic
 ```
 
-Provider checks exist for SUSF, calendar, weather, maps, and other adapters, but some call real external services and may require local auth or API keys. For SUSF, login is manual:
+Provider checks exist for SUSF, weather, maps, and other adapters, but some call real external services and may require local auth or API keys. For SUSF, login is manual:
 
 ```bash
 npm run susf:login
 npm run susf:check
 ```
 
-`preference:set` uses OpenAI structured JSON output and requires `OPENAI_API_KEY`. Calendar, Maps, and live provider checks require their own local configuration. Runtime secrets and personal data under `.auth/`, `.env`, `data/preferences.json`, `data/saved-play-areas.json`, and `output/` are ignored.
+`preference:set` uses OpenAI structured JSON output and requires `OPENAI_API_KEY`. Maps and live provider checks require their own local configuration. Runtime secrets and personal data under `.auth/`, `.env`, `data/preferences.json`, `data/saved-play-areas.json`, and `output/` are ignored.
 
 ## Limitations
 
