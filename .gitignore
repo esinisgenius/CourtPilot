@@ -13,3 +13,4 @@ data/saved-play-areas.json
 storageState.json
 .build/
 .env.local
+AGENTS.md
