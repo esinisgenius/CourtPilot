@@ -1,7 +1,9 @@
 import { getBookableAvailability } from '../../bookable/src/index.mjs';
+import { getClubSparkAvailability } from '../../clubspark/src/index.mjs';
 import { buildCandidates } from '../../core/src/index.mjs';
 import { getSusfAvailability } from '../../susf/src/index.mjs';
 import { getIntracAvailability } from '../../intrac/src/index.mjs';
+import { getMindbodyAvailability } from '../../mindbody/src/index.mjs';
 import { getSportLogicAvailability } from '../../sportlogic/src/index.mjs';
 import { getUnifiedBookingsAvailability } from '../../unified-bookings/src/index.mjs';
 import { markProviderObserved, normalizeProviderScope } from './provider-scope.mjs';
@@ -10,9 +12,11 @@ import { validateAgentState } from './state.mjs';
 const DEFAULT_PROVIDER_FETCHERS = Object.freeze({
   susf: getSusfAvailability,
   bookable: getBookableAvailability,
+  clubspark: getClubSparkAvailability,
   'unified-bookings': getUnifiedBookingsAvailability,
   sportlogic: getSportLogicAvailability,
   intrac: getIntracAvailability,
+  mindbody: getMindbodyAvailability,
 });
 
 function mergeCandidates(existingCandidates, newCandidates) {

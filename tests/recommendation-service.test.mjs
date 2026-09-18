@@ -12,6 +12,7 @@ import {
   selectNearbyCourts,
   serializeCandidate,
 } from '../packages/agent/src/recommendation-service.mjs';
+import { normalizePreferenceProfile } from '../packages/preferences/src/index.mjs';
 
 function rankedEntry({ id, rank, venue, startTime, price = 20 }) {
   return {
@@ -325,6 +326,60 @@ test('city input does not match Blacktown City Council venues', () => {
   assert.equal(routedScope.providerScope.activeProviderIds.includes('susf'), true);
 });
 
+test('city or USYD keeps both explicit location scopes without Sydney-wide fallback', () => {
+  const sourceText = '周一我想在city或悉大打球，不要太热';
+  const profile = normalizePreferenceProfile({
+    version: 2,
+    searchWindowDays: 7,
+    searchScope: {
+      days: 7,
+      location: null,
+      sourceText: '',
+    },
+    preferences: [],
+    hardConstraints: [],
+    objectives: [],
+    unresolvedPreferences: [],
+    sourceText: '',
+    updatedAt: '2026-09-19T00:00:00+10:00',
+  }, { sourceText, updatedAt: '2026-09-19T00:00:00+10:00' });
+
+  const routedScope = searchScopeForProfile(profile);
+  const matchedNames = routedScope.locationRouting.matchedVenues.map((venue) => venue.name);
+
+  assert.equal(profile.searchScope.sourceText, sourceText);
+  assert.equal(routedScope.locationSource, 'explicit');
+  assert.equal(routedScope.locationRouting.status, 'matched_geographic_scope');
+  assert.deepEqual(
+    routedScope.locationRouting.targets.map((target) => target.canonicalName),
+    ['Sydney CBD', 'University of Sydney'],
+  );
+  assert.equal(matchedNames.includes('Sydney Uni Sport Tennis Courts'), true);
+  assert.equal(matchedNames.includes('Camperdown Tennis'), true);
+  assert.equal(matchedNames.includes('Aloha Street Tennis Courts'), false);
+  assert.equal(matchedNames.includes('Burwood Tennis Courts'), false);
+});
+
+test('compound city-or-USYD location text resolves before the primary target is rejected', () => {
+  const routedScope = searchScopeForProfile({
+    updatedAt: '2026-09-19T00:00:00+10:00',
+    searchScope: {
+      days: 7,
+      location: 'city或悉大',
+      sourceText: '周一我想在city或悉大打球，不要太热',
+      source: 'user',
+      isExplicit: true,
+    },
+  });
+
+  assert.equal(routedScope.locationRouting.status, 'matched_geographic_scope');
+  assert.equal(routedScope.providerScope.activeProviderIds.includes('susf'), true);
+  assert.equal(
+    routedScope.locationRouting.matchedVenues.some((venue) => venue.name === 'Aloha Street Tennis Courts'),
+    false,
+  );
+});
+
 test('CBD downtown and Chinese city-centre variants normalize to Sydney CBD', () => {
   for (const location of ['CBD', 'downtown', '市中心', '悉尼市区']) {
     const routedScope = searchScopeForProfile({
@@ -367,6 +422,47 @@ test('explicit CBD recommendation includes nearby static verified courts without
   }
 });
 
+test('coastal semantic preference recalls tagged realtime venues without treating it as a location', () => {
+  const profile = normalizePreferenceProfile({
+    version: 2,
+    searchScope: { days: 7 },
+    preferences: [],
+    hardConstraints: [],
+    objectives: [],
+    unresolvedPreferences: [],
+  }, { sourceText: '海边风景好的网球场' });
+  const routedScope = searchScopeForProfile(profile);
+  const matchedNames = routedScope.locationRouting.matchedVenues.map((venue) => venue.name);
+
+  assert.equal(routedScope.locationSource, 'sydney_fallback');
+  assert.deepEqual(routedScope.venueSettings, ['coastal', 'scenic']);
+  assert.equal(matchedNames.includes('Collaroy Tennis Club'), true);
+  assert.equal(matchedNames.includes('Pinecourt Tennis Club'), true);
+  assert.equal(matchedNames.includes('Kiama Blowhole Tennis Club'), true);
+  assert.equal(matchedNames.includes('Burwood Tennis Courts'), false);
+});
+
+test('scenic semantic preference returns tagged static venues as nearby courts without fake slots', () => {
+  const profile = normalizePreferenceProfile({
+    version: 2,
+    searchScope: { days: 7 },
+    preferences: [],
+    hardConstraints: [],
+    objectives: [],
+    unresolvedPreferences: [],
+  }, { sourceText: '找个风景好的球场' });
+  const routedScope = searchScopeForProfile(profile);
+  const nearby = selectNearbyCourts(routedScope, [], { limit: 5 });
+
+  assert.equal(nearby.some((venue) => venue.venue === 'Baker Park Tennis Courts'), true);
+  assert.equal(nearby.some((venue) => venue.venue === 'The Langham Sydney Tennis Court'), true);
+  for (const venue of nearby) {
+    assert.equal(venue.liveAvailability, false);
+    assert.equal(venue.startTime, null);
+    assert.equal(venue.price, null);
+  }
+});
+
 test('nearby courts exclude realtime availability tier venues and unknown inventory', () => {
   const searchScope = {
     locationSource: 'explicit',
@@ -404,6 +500,7 @@ test('nearby courts exclude realtime availability tier venues and unknown invent
         lat: -33.862,
         lng: 151.202,
         booking: { url: null, capability: null },
+        venueUrl: 'https://venue.example.test/nearby',
       },
       {
         id: 'realtime-nearby',
@@ -429,6 +526,7 @@ test('nearby courts exclude realtime availability tier venues and unknown invent
   });
 
   assert.deepEqual(nearby.map((venue) => venue.id), ['static-nearby']);
+  assert.equal(nearby[0].venueUrl, 'https://venue.example.test/nearby');
 });
 
 test('nearby courts are only returned for explicit resolved locations', () => {

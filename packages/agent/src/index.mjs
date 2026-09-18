@@ -8,12 +8,14 @@ export {
 
 export {
   EVALUATOR_STATUS,
+  buildDiagnosticSnapshot,
   evaluateCandidateSet,
   preferenceMatchesCandidate,
 } from './evaluator.mjs';
 
 export {
   chooseReplanningAction,
+  chooseReplanningDecision,
   heuristicReplanningAction,
 } from './policy.mjs';
 
@@ -55,8 +57,17 @@ export {
   executeReplanningAction,
   runReplanningLoop,
   validateBoundedRealReplanningAction,
+  validateActionForState,
   validateFactualObservations,
 } from './replanner.mjs';
+
+export {
+  LlmReplannerError,
+  buildReplannerMessages,
+  createOpenAiReplannerProvider,
+  parseReplannerContent,
+  replannerOutputJsonSchema,
+} from './llm-replanner.mjs';
 
 export {
   recommendCourts,

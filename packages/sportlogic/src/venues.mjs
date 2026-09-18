@@ -15,6 +15,23 @@ const DEFAULT_SPORTLOGIC_VENUES = Object.freeze([
     enabled: true,
     auditCourtCount: 2,
   },
+  {
+    id: 'sportlogic-collaroy-tennis-club',
+    name: 'Collaroy Tennis Club',
+    suburb: 'Collaroy',
+    address: 'Griffith Park, Anzac Avenue, Collaroy NSW 2097',
+    location: { lat: -33.73948, lng: 151.303764 },
+    geoSource: 'tennisvenues_venue_page',
+    geoConfidence: 'high',
+    provider: 'sportlogic',
+    sport: 'tennis',
+    officialUrl: 'https://www.tennisvenues.com.au/booking/collaroy-tc',
+    clientId: 'collaroy-tc',
+    enabled: true,
+    auditCourtCount: 6,
+    aliases: ['Long Reef Point tennis', 'Collaroy Beach tennis'],
+    settings: ['coastal', 'scenic', 'beach_nearby'],
+  },
 ]);
 
 export {

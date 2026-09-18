@@ -39,6 +39,7 @@ function bookingCapability(provider, facts) {
   if (safeUrl(facts.bookingUrl)) {
     if (provider === 'sportlogic') return 'court_date_time_preselected';
     if (provider === 'intrac') return 'date_time_preselected';
+    if (provider === 'clubspark') return 'court_date_time_preselected';
   }
   if (safeUrl(facts.officialUrl)) return 'booking_page';
   return null;

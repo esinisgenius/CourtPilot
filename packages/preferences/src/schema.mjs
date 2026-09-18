@@ -9,6 +9,7 @@ const allowedFeatures = new Set([
   'venue',
   'area',
   'surface',
+  'venue_setting',
   'travel_time',
   'weather',
   'duration',
@@ -71,6 +72,7 @@ const relaxationDirectionsByFeature = {
   venue: new Set(['other_venues', 'ask_user']),
   area: new Set(['other_venues', 'ask_user']),
   surface: new Set(['include_nonpreferred', 'ask_user']),
+  venue_setting: new Set(['other_venues', 'ask_user']),
   travel_time: new Set(['longer_travel_time', 'ask_user']),
   weather: new Set(['ask_user']),
   duration: new Set(['shorter_duration', 'ask_user']),
@@ -182,9 +184,9 @@ function normalizeUnresolved(unresolvedPreferences = []) {
     });
 }
 
-function normalizeSearchScope(profile) {
+function normalizeSearchScope(profile, { sourceText = '' } = {}) {
   const scope = isPlainObject(profile.searchScope) ? { ...profile.searchScope } : {};
-  scope.sourceText = scope.sourceText ?? profile.sourceText ?? '';
+  scope.sourceText = sourceText || scope.sourceText || profile.sourceText || '';
   scope.source = scope.source ?? 'user';
   if (typeof scope.location !== 'string') {
     const inferredLocation = inferLocationFromText(scope.sourceText);
@@ -259,6 +261,7 @@ function inferRelaxationDirection(preference) {
   if (preference.feature === 'venue') return 'other_venues';
   if (preference.feature === 'area') return 'other_venues';
   if (preference.feature === 'surface') return 'include_nonpreferred';
+  if (preference.feature === 'venue_setting') return 'other_venues';
   if (preference.feature === 'travel_time') return 'longer_travel_time';
   if (preference.feature === 'weather') return 'ask_user';
   if (preference.feature === 'duration') return 'shorter_duration';
@@ -365,7 +368,7 @@ function normalizePreferenceProfile(profile, { sourceText, updatedAt = new Date(
   const resolvedSourceText = sourceText ?? normalized.sourceText ?? '';
 
   normalized.version = PREFERENCE_VERSION;
-  normalized.searchScope = normalizeSearchScope(normalized);
+  normalized.searchScope = normalizeSearchScope(normalized, { sourceText: resolvedSourceText });
   normalized.transportPreference = normalizeTransportPreference(normalized.transportPreference);
   normalized.weatherPreference = normalizeWeatherPreference(normalized.weatherPreference, {
     sourceText: resolvedSourceText,
@@ -445,6 +448,39 @@ function upsertSoftPreference(preferences, preference) {
 
 function repairNaturalLanguageSemantics(profile) {
   const text = profile.sourceText ?? '';
+
+  const venueSettings = [];
+  if (includesAny(text, ['海边', '靠海', '海景', '海岸', 'beach', 'coastal', 'ocean', 'seaside'])) {
+    venueSettings.push('coastal');
+  }
+  if (includesAny(text, ['风景好', '景色好', '景观好', '有美景', '漂亮的球场', 'scenic', 'nice view', 'great view', 'beautiful court'])) {
+    venueSettings.push('scenic');
+  }
+  if (includesAny(text, ['海港', '港景', 'harbour', 'harbor'])) venueSettings.push('harbour');
+  if (venueSettings.length > 0) {
+    profile.hardConstraints = removeHardConstraintsMatching(
+      profile.hardConstraints,
+      (constraint) => constraint.feature === 'venue_setting',
+    );
+    const genericSettingLocations = new Set(['海边', '靠海', '海景', '风景好', '景色好', 'scenic', 'coastal', 'seaside']);
+    if (genericSettingLocations.has(String(profile.searchScope?.location ?? '').trim().toLowerCase())) {
+      delete profile.searchScope.location;
+      profile.searchScope.isExplicit = hasExplicitSearchScope(profile.searchScope);
+    }
+    profile.preferences = upsertSoftPreference(profile.preferences, {
+      feature: 'venue_setting',
+      type: 'soft',
+      importance: 'high',
+      priority: 'high',
+      relaxable: true,
+      relaxationDirection: 'other_venues',
+      sourceText: text,
+      direction: 'preferred',
+      rule: { include: [...new Set(venueSettings)] },
+      source: 'user',
+      isExplicit: true,
+    });
+  }
 
   if (text.includes('周六有事') && text.includes('周日') && /八点后|8点后|20[:：]?00后/.test(text)) {
     profile.searchScope = {
@@ -1137,7 +1173,7 @@ function validateRuleForFeature(feature, rule, path, issues) {
   if (feature === 'start_time') return validateStartTimeRule(rule, path, issues);
   if (feature === 'date') return validateDateRule(rule, path, issues);
   if (feature === 'price') return validatePriceRule(rule, path, issues);
-  if (feature === 'court' || feature === 'venue' || feature === 'area' || feature === 'surface') return validateListRule(rule, path, issues);
+  if (feature === 'court' || feature === 'venue' || feature === 'area' || feature === 'surface' || feature === 'venue_setting') return validateListRule(rule, path, issues);
   if (feature === 'duration') return validateDurationRule(rule, path, issues);
   if (feature === 'consecutive_availability') return validateConsecutiveAvailabilityRule(rule, path, issues);
   if (feature === 'court_count') return validateCourtCountRule(rule, path, issues);

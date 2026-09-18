@@ -316,6 +316,21 @@ function extractRateTableFromHtml(html) {
   return normalizeRateTableFromPriceArrays(extractSerializedPriceArrays(html));
 }
 
+function selectSusfSlotPrice(date, priceOptions = []) {
+  const weekday = new Date(`${date}T12:00:00+10:00`).getUTCDay();
+  const rateName = weekday === 0 || weekday === 6 ? 'tennis peak fee' : 'tennis off-peak fee';
+  const selected = priceOptions.find((option) => String(option?.name ?? '').trim().toLowerCase() === rateName
+    && typeof option?.amount === 'number');
+  if (!selected) {
+    return { amount: null, currency: 'AUD', confidence: 'unknown' };
+  }
+  return {
+    amount: selected.amount,
+    currency: selected.currency ?? 'AUD',
+    confidence: 'verified',
+  };
+}
+
 async function extractCurrentCourtRateTable(page) {
   return extractRateTableFromHtml(await page.content());
 }
@@ -477,6 +492,7 @@ function toPublicAvailability(row) {
     startTime,
     durationMinutes: row.duration_minutes,
     priceOptions: row.price_options,
+    price: selectSusfSlotPrice(row.date, row.price_options),
     eligibility: {
       sport: {
         type: 'tennis',
@@ -786,6 +802,7 @@ export {
   getSusfAvailability,
   isAvailabilityTriggerText,
   normalizeRateTableFromPriceArrays,
+  selectSusfSlotPrice,
   normalizeAvailability,
   readSusfAvailability,
   toPublicAvailability,

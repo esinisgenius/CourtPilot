@@ -150,6 +150,7 @@ const ruleByFeature = {
   venue: listRuleSchema,
   area: listRuleSchema,
   surface: listRuleSchema,
+  venue_setting: listRuleSchema,
   travel_time: travelTimeRuleSchema,
   weather: weatherRuleSchema,
   duration: durationRuleSchema,

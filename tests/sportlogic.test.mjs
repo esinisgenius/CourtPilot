@@ -103,14 +103,17 @@ function mockFetch({ fragment = fixtureFragment, wafChallenge = false } = {}) {
 }
 
 test('SportLogic default registry contains Burwood production metadata', () => {
-  assert.equal(DEFAULT_SPORTLOGIC_VENUES.length, 1);
-  const [venue] = DEFAULT_SPORTLOGIC_VENUES;
+  assert.equal(DEFAULT_SPORTLOGIC_VENUES.length, 2);
+  const venue = DEFAULT_SPORTLOGIC_VENUES.find((item) => item.id === 'sportlogic-burwood-tennis-courts');
   assert.equal(venue.provider, 'sportlogic');
   assert.equal(venue.name, 'Burwood Tennis Courts');
   assert.equal(venue.clientId, 'burwood-tennis-courts');
   assert.equal(venue.venueId, '1');
   assert.equal(venue.enabled, true);
   assert.equal(venue.auditCourtCount, 2);
+  const collaroy = DEFAULT_SPORTLOGIC_VENUES.find((item) => item.id === 'sportlogic-collaroy-tennis-club');
+  assert.equal(collaroy.clientId, 'collaroy-tc');
+  assert.equal(collaroy.auditCourtCount, 6);
 });
 
 test('SportLogic discovery reads client id from public booking URL', () => {

@@ -282,8 +282,110 @@ function evaluateCandidateSet({
   };
 }
 
+function failureCode(failure) {
+  if (typeof failure === 'string') return failure;
+  return failure?.code ?? failure?.reason ?? failure?.feature ?? 'unknown';
+}
+
+function aggregateFailures(failures = []) {
+  const counts = {};
+  for (const failure of failures) {
+    const code = failureCode(failure);
+    counts[code] = (counts[code] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function softPreferencePerformance(preferences = [], candidates = []) {
+  return preferences.map((preference) => {
+    const judgements = candidates.map((candidate) => preferenceMatchesCandidate(preference, candidate));
+    return {
+      feature: preference.feature,
+      importance: preferencePriority(preference),
+      relaxable: preference.relaxable ?? true,
+      satisfied: judgements.filter((value) => value === true).length,
+      violated: judgements.filter((value) => value === false).length,
+      unknown: judgements.filter((value) => value === null).length,
+    };
+  });
+}
+
+function compactNearMiss(candidate, preferences = []) {
+  const failedConstraints = (candidate.failedConstraints ?? candidate.reasons ?? []).map(failureCode);
+  const failedPreferences = preferences
+    .filter((preference) => preferenceMatchesCandidate(preference, candidate) === false)
+    .map((preference) => preference.feature);
+  const deltas = {};
+  for (const failure of candidate.failedConstraints ?? candidate.reasons ?? []) {
+    if (Number.isFinite(failure?.actual) || Number.isFinite(failure?.limit)) {
+      deltas[failureCode(failure)] = {
+        actual: failure.actual ?? null,
+        limit: failure.limit ?? null,
+      };
+    }
+  }
+  return {
+    candidateId: candidate.id ?? null,
+    failedConstraints,
+    failedPreferences,
+    deltas,
+  };
+}
+
+function buildDiagnosticSnapshot(state, evaluation, {
+  observedCandidateCount = state.candidates?.length ?? 0,
+  maxNearMisses = 5,
+} = {}) {
+  const providerScope = state.searchScope?.providerScope ?? {};
+  const searchedAreas = (state.actionsTaken ?? [])
+    .filter((entry) => entry.selectedAction === 'SWITCH_SEARCH_AREA')
+    .map((entry) => entry.parameters?.targetAreaId)
+    .filter(Boolean);
+  if (state.searchScope?.activeAreaId) searchedAreas.unshift(state.searchScope.activeAreaId);
+
+  return {
+    status: evaluation.status,
+    reasons: evaluation.reasons,
+    candidateCounts: {
+      observed: observedCandidateCount,
+      afterHardFilter: state.candidates.length,
+      satisfactory: evaluation.satisfactory ? state.candidates.length : 0,
+    },
+    hardConstraintFailures: aggregateFailures(evaluation.failedConstraints),
+    softPreferencePerformance: softPreferencePerformance(
+      state.preferences?.preferences ?? [],
+      state.candidates,
+    ),
+    weakPreferences: evaluation.weakPreferences,
+    nearMisses: state.rejectedCandidates
+      .slice(-maxNearMisses)
+      .map((candidate) => compactNearMiss(candidate, state.preferences?.preferences ?? [])),
+    searchCoverage: {
+      searchedProviders: providerScope.observedProviderIds ?? [],
+      activeProviders: providerScope.activeProviderIds ?? [],
+      availableProviders: (providerScope.expandableProviderIds ?? [])
+        .filter((id) => !(providerScope.activeProviderIds ?? []).includes(id)
+          && !(providerScope.failedProviderIds ?? []).includes(id)),
+      failedProviders: providerScope.failedProviderIds ?? [],
+      currentRadius: state.searchScope?.radiusMeters ?? null,
+      searchedAreas: [...new Set(searchedAreas)],
+      currentArea: state.searchScope?.activeAreaId ?? null,
+      currentTimeWindow: state.searchScope?.timeWindow ?? null,
+      temporalShiftCount: state.searchScope?.temporalShiftCount ?? 0,
+      includeNonPreferredCourts: state.searchScope?.courtScope?.includeNonPreferred === true,
+      locationRoutingStatus: state.searchScope?.locationRouting?.status ?? null,
+    },
+    previousActions: (state.actionsTaken ?? []).map((entry) => ({
+      iteration: entry.iteration,
+      action: entry.selectedAction,
+      parameters: entry.parameters ?? {},
+    })),
+  };
+}
+
 export {
   EVALUATOR_STATUS,
+  buildDiagnosticSnapshot,
   evaluateCandidateSet,
   preferenceMatchesCandidate,
 };

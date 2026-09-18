@@ -3,9 +3,10 @@ import {
   buildRankerInput,
   rankCandidates,
 } from '../../ranking/src/index.mjs';
+import { getNextRadius, getSavedPlayArea } from '../../maps/src/index.mjs';
 import { boundedRealReplanningActions, REPLANNING_ACTIONS, validateReplanningAction } from './actions.mjs';
-import { evaluateCandidateSet } from './evaluator.mjs';
-import { chooseReplanningAction } from './policy.mjs';
+import { buildDiagnosticSnapshot, evaluateCandidateSet } from './evaluator.mjs';
+import { chooseReplanningDecision } from './policy.mjs';
 import {
   expandSearchRadius,
   expandVenueSet,
@@ -30,6 +31,56 @@ function validateBoundedRealReplanningAction(action) {
     throw new ReplannerError('Action is outside the Real LLM Replanner contract', [
       `selectedAction must be one of ${[...boundedRealReplanningActions].join(', ')}`,
     ]);
+  }
+  return validated;
+}
+
+function actionWasTaken(state, selectedAction, predicate = () => true) {
+  return state.actionsTaken.some((entry) => entry.selectedAction === selectedAction && predicate(entry));
+}
+
+async function validateActionForState(state, action, {
+  evaluation,
+  savedAreasPath,
+} = {}) {
+  const current = validateAgentState(state);
+  const validated = validateBoundedRealReplanningAction(action);
+  const selected = validated.selectedAction;
+
+  if (selected === REPLANNING_ACTIONS.SATISFACTORY && evaluation?.satisfactory !== true) {
+    throw new ReplannerError('SATISFACTORY is incompatible with the current evaluation');
+  }
+  if (selected === REPLANNING_ACTIONS.EXPAND_RADIUS
+    && getNextRadius(current.searchScope?.radiusMeters) <= (current.searchScope?.radiusMeters ?? 0)) {
+    throw new ReplannerError('Search radius is already at the configured maximum');
+  }
+  if (selected === REPLANNING_ACTIONS.INCLUDE_NONPREFERRED_COURTS) {
+    const courtPreference = (current.preferences?.preferences ?? [])
+      .some((preference) => preference.feature === 'court' && preference.relaxable !== false);
+    if (!courtPreference || current.searchScope?.courtScope?.includeNonPreferred === true) {
+      throw new ReplannerError('Non-preferred court expansion is unavailable or already exhausted');
+    }
+  }
+  if (selected === REPLANNING_ACTIONS.SHIFT_TIME_WINDOW
+    && actionWasTaken(current, REPLANNING_ACTIONS.SHIFT_TIME_WINDOW)) {
+    throw new ReplannerError('Time-window shift was already attempted without sufficient progress');
+  }
+  if (selected === REPLANNING_ACTIONS.EXPAND_VENUE_SET) {
+    try {
+      expandVenueSet(current);
+    } catch (error) {
+      throw new ReplannerError(error.message, [error.message]);
+    }
+  }
+  if (selected === REPLANNING_ACTIONS.SWITCH_SEARCH_AREA) {
+    const targetAreaId = validated.parameters.targetAreaId;
+    if (targetAreaId === current.searchScope?.activeAreaId
+      || actionWasTaken(current, selected, (entry) => entry.parameters?.targetAreaId === targetAreaId)) {
+      throw new ReplannerError('The requested search area is current or already exhausted');
+    }
+    if (!await getSavedPlayArea(targetAreaId, { filePath: savedAreasPath })) {
+      throw new ReplannerError(`Saved play area not found: ${targetAreaId}`);
+    }
   }
   return validated;
 }
@@ -177,6 +228,8 @@ async function refreshObservedState(state, observe) {
   return validateAgentState({
     ...state,
     ...observed,
+    goal: state.goal,
+    preferences: state.preferences,
     searchScope: observed?.searchScope ?? state.searchScope,
     candidates: observed?.candidates ?? state.candidates,
     rejectedCandidates: observed?.rejectedCandidates ?? state.rejectedCandidates,
@@ -186,6 +239,29 @@ async function refreshObservedState(state, observe) {
     iteration: observed?.iteration ?? state.iteration,
     status: observed?.status ?? state.status,
   });
+}
+
+function compactState(state) {
+  const providerScope = state.searchScope?.providerScope ?? {};
+  return {
+    status: state.status,
+    iteration: state.iteration,
+    candidateCount: state.candidates.length,
+    rejectedCandidateCount: state.rejectedCandidates.length,
+    radiusMeters: state.searchScope?.radiusMeters ?? null,
+    timeWindow: state.searchScope?.timeWindow ?? null,
+    activeAreaId: state.searchScope?.activeAreaId ?? null,
+    activeProviderIds: providerScope.activeProviderIds ?? [],
+    observedProviderIds: providerScope.observedProviderIds ?? [],
+    includeNonPreferredCourts: state.searchScope?.courtScope?.includeNonPreferred === true,
+  };
+}
+
+function assertHardConstraintsUnchanged(before, after) {
+  if (JSON.stringify(before.preferences?.hardConstraints ?? [])
+    !== JSON.stringify(after.preferences?.hardConstraints ?? [])) {
+    throw new ReplannerError('Hard constraints changed during replanning');
+  }
 }
 
 function applyDeterministicHardFilter(state) {
@@ -242,9 +318,11 @@ async function runReplanningLoop(initialState, {
   minCandidates = 1,
   savedAreasPath,
 } = {}) {
-  let state = applyDeterministicHardFilter(
-    await refreshObservedState(validateAgentState(initialState), observe),
-  );
+  const validatedInitialState = validateAgentState(initialState);
+  const initialHardConstraints = structuredClone(validatedInitialState.preferences?.hardConstraints ?? []);
+  let observedState = await refreshObservedState(validatedInitialState, observe);
+  let observedCandidateCount = observedState.candidates.length;
+  let state = applyDeterministicHardFilter(observedState);
   const iterations = [];
   let latestRanking = { rankedCandidates: [] };
 
@@ -271,30 +349,40 @@ async function runReplanningLoop(initialState, {
       rankerTimeoutMs,
     });
     latestRanking = rankerResult;
-    const action = evaluation.status === 'SATISFACTORY'
-      ? validateBoundedRealReplanningAction({
-        selectedAction: REPLANNING_ACTIONS.SATISFACTORY,
-        targetPreference: null,
-        rationale: 'The current ranked candidate set is satisfactory.',
-        expectedEffect: 'Return the ranked candidates without invoking the replanner.',
-      })
-      : validateBoundedRealReplanningAction(await chooseReplanningAction(state, {
-        provider,
-        maxIterations,
+    const diagnostics = buildDiagnosticSnapshot(state, evaluation, { observedCandidateCount });
+    const stateBefore = compactState(state);
+    const decision = await chooseReplanningDecision(state, {
+      provider,
+      maxIterations,
+      evaluation,
+      diagnostics,
+      validateAction: (action) => validateActionForState(state, action, {
         evaluation,
-      }));
+        savedAreasPath,
+      }),
+    });
+    const action = decision.action;
 
+    const nextState = await executeReplanningAction(state, action, { savedAreasPath });
+    assertHardConstraintsUnchanged(
+      { preferences: { hardConstraints: initialHardConstraints } },
+      nextState,
+    );
     iterations.push({
       iteration: state.iteration,
-      evaluation,
+      source: decision.source,
       action,
+      reason: action.rationale,
+      validationFailure: decision.validationFailure,
+      diagnosticsSummary: diagnostics,
+      stateBefore,
+      stateAfter: compactState(nextState),
+      evaluation,
       searchScope: state.searchScope,
       candidateCount: state.candidates.length,
       rankedCandidates: rankerResult.rankedCandidates,
       factualCandidateFeatures,
     });
-
-    const nextState = await executeReplanningAction(state, action, { savedAreasPath });
     if (['SATISFACTORY', 'ASKING_USER', 'STOPPED'].includes(nextState.status)) {
       return {
         status: nextState.status,
@@ -304,9 +392,13 @@ async function runReplanningLoop(initialState, {
       };
     }
 
-    state = applyDeterministicHardFilter(
-      await refreshObservedState(nextState, observe),
+    observedState = await refreshObservedState(nextState, observe);
+    assertHardConstraintsUnchanged(
+      { preferences: { hardConstraints: initialHardConstraints } },
+      observedState,
     );
+    observedCandidateCount = observedState.candidates.length;
+    state = applyDeterministicHardFilter(observedState);
   }
 }
 
@@ -317,5 +409,6 @@ export {
   evaluateCurrentCandidateSet,
   runReplanningLoop,
   validateBoundedRealReplanningAction,
+  validateActionForState,
   validateFactualObservations,
 };

@@ -1,4 +1,8 @@
-import { REPLANNING_ACTIONS, validateReplanningAction } from './actions.mjs';
+import {
+  boundedRealReplanningActions,
+  REPLANNING_ACTIONS,
+  validateReplanningAction,
+} from './actions.mjs';
 import { evaluateCandidateSet } from './evaluator.mjs';
 import { canExpandProviderScope } from './provider-scope.mjs';
 import { validateAgentState } from './state.mjs';
@@ -163,26 +167,103 @@ async function chooseReplanningAction(state, {
     failedConstraints: state.failedConstraints,
   }),
 } = {}) {
+  const decision = await chooseReplanningDecision(state, {
+    provider,
+    maxIterations,
+    evaluation,
+  });
+  return decision.action;
+}
+
+function compactFailure(error) {
+  return {
+    code: error?.code ?? error?.name ?? 'ERROR',
+    message: error?.message ?? String(error),
+    issues: Array.isArray(error?.issues) ? error.issues : [],
+  };
+}
+
+async function chooseReplanningDecision(state, {
+  provider,
+  maxIterations = 3,
+  evaluation = evaluateCandidateSet({
+    candidates: state.candidates,
+    rejectedCandidates: state.rejectedCandidates,
+    preferences: state.preferences,
+    failedConstraints: state.failedConstraints,
+  }),
+  diagnostics = evaluation,
+  validateAction = (action) => validateReplanningAction(action),
+} = {}) {
   validateAgentState(state);
 
   if (state.iteration >= maxIterations) {
-    return validateReplanningAction({
+    return {
+      source: 'deterministic_termination',
+      action: validateReplanningAction({
       selectedAction: REPLANNING_ACTIONS.STOP,
       targetPreference: null,
       rationale: 'Maximum replanning iterations reached.',
       expectedEffect: 'Stop to avoid an infinite replanning loop.',
-    });
+      }),
+      validationFailure: null,
+    };
   }
 
   if (provider) {
-    const proposedAction = await provider.choose({ state, evaluation });
-    return validateReplanningAction(proposedAction);
+    try {
+      const proposedAction = await provider.choose({
+        goal: state.goal,
+        preferences: state.preferences,
+        searchScope: state.searchScope,
+        diagnostics,
+        previousActions: diagnostics.previousActions ?? state.actionsTaken,
+        allowedActions: [...boundedRealReplanningActions],
+        iteration: state.iteration,
+        // Kept for compatibility with existing injected providers and tests.
+        state,
+        evaluation,
+      });
+      return {
+        source: 'llm',
+        action: await validateAction(validateReplanningAction(proposedAction)),
+        validationFailure: null,
+      };
+    } catch (error) {
+      const fallbackAction = validateReplanningAction(heuristicReplanningAction(state, evaluation));
+      try {
+        return {
+          source: 'heuristic_fallback',
+          action: await validateAction(fallbackAction),
+          validationFailure: compactFailure(error),
+        };
+      } catch (fallbackError) {
+        return {
+          source: 'heuristic_fallback',
+          action: validateReplanningAction({
+            selectedAction: REPLANNING_ACTIONS.ASK_USER,
+            targetPreference: null,
+            rationale: 'Neither the model decision nor the deterministic fallback can make valid bounded progress.',
+            expectedEffect: 'Ask the user for clarification without changing hard constraints.',
+          }),
+          validationFailure: {
+            ...compactFailure(error),
+            fallbackFailure: compactFailure(fallbackError),
+          },
+        };
+      }
+    }
   }
 
-  return validateReplanningAction(heuristicReplanningAction(state, evaluation));
+  return {
+    source: 'heuristic',
+    action: await validateAction(validateReplanningAction(heuristicReplanningAction(state, evaluation))),
+    validationFailure: null,
+  };
 }
 
 export {
   chooseReplanningAction,
+  chooseReplanningDecision,
   heuristicReplanningAction,
 };

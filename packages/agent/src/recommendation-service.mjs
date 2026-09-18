@@ -1,4 +1,5 @@
 import { runReplanningLoop } from './replanner.mjs';
+import { createOpenAiReplannerProvider } from './llm-replanner.mjs';
 import { createInitialAgentState } from './state.mjs';
 import { observeConfiguredAvailabilityProviders } from './observations.mjs';
 import { normalizeSearchScope } from './search-scope.mjs';
@@ -16,6 +17,8 @@ import {
 } from '../../core/src/index.mjs';
 import { DEFAULT_BOOKABLE_VENUES } from '../../bookable/src/index.mjs';
 import { DEFAULT_INTRAC_VENUES } from '../../intrac/src/index.mjs';
+import { DEFAULT_CLUBSPARK_VENUES } from '../../clubspark/src/index.mjs';
+import { DEFAULT_MINDBODY_VENUES } from '../../mindbody/src/index.mjs';
 import { DEFAULT_SPORTLOGIC_VENUES } from '../../sportlogic/src/index.mjs';
 import { DEFAULT_UNIFIED_BOOKINGS_VENUES } from '../../unified-bookings/src/index.mjs';
 import { canonicalVenueInventory } from './venue-inventory.mjs';
@@ -58,6 +61,8 @@ const configuredVenueCatalog = Object.freeze([
   },
   ...DEFAULT_BOOKABLE_VENUES,
   ...DEFAULT_INTRAC_VENUES,
+  ...DEFAULT_CLUBSPARK_VENUES,
+  ...DEFAULT_MINDBODY_VENUES,
   ...DEFAULT_SPORTLOGIC_VENUES,
   ...DEFAULT_UNIFIED_BOOKINGS_VENUES,
 ]);
@@ -146,11 +151,17 @@ function accessibilityOptionsForProfile(profile) {
 
 function candidateDistanceKm(candidate, searchScope = {}) {
   if (searchScope.locationSource !== 'explicit') return null;
-  const target = centerForTarget(searchScope.targetLocation);
+  const targets = searchScope.locationRouting?.targets?.length
+    ? searchScope.locationRouting.targets
+    : [searchScope.targetLocation];
   const venue = candidate.features?.venue ?? candidate.source?.canonicalAvailability?.venue ?? null;
   const venuePoint = pointForVenue(venue);
-  if (!target || !venuePoint) return null;
-  return haversineMeters(target, venuePoint) / 1000;
+  if (!venuePoint) return null;
+  const distances = targets
+    .map((target) => centerForTarget(target))
+    .filter(Boolean)
+    .map((target) => haversineMeters(target, venuePoint) / 1000);
+  return distances.length > 0 ? Math.min(...distances) : null;
 }
 
 function enrichDistanceFacts(candidates = [], searchScope = {}) {
@@ -214,7 +225,7 @@ function cloneTarget(location) {
 
 function centerForTarget(target) {
   if (!target || typeof target !== 'object') return null;
-  if (isValidCoordinate(target.center)) return target.center;
+  if (target.center && isValidCoordinate(target.center)) return target.center;
   if (isValidCoordinate(target)) return { lat: target.lat, lng: target.lng };
   return null;
 }
@@ -283,14 +294,28 @@ function deprioritizeSusfForDefaultScope(providerIds) {
   ];
 }
 
+function alternativeLocationTargets(searchScope = {}, primaryTarget = null) {
+  const text = String(searchScope.sourceText ?? '').toLowerCase();
+  const hasAlternativeConnector = /(?:\u6216\u8005|\u6216|\bor\b|\/)/iu.test(text);
+  const mentionsCity = /(?:\bcity\b|\bcbd\b|\bdowntown\b|\u5e02\u4e2d\u5fc3|\u6089\u5c3c\u5e02\u533a)/iu.test(text);
+  const mentionsUsyd = /(?:\u6089\u5927|\u6089\u5c3c\u5927\u5b66|\busyd\b|\bsydney uni(?:versity)?\b|\buniversity of sydney\b)/iu.test(text);
+  if (!hasAlternativeConnector || !mentionsCity || !mentionsUsyd) return [primaryTarget].filter(Boolean);
+
+  return ['city', '\u6089\u5c3c\u5927\u5b66\u9644\u8fd1']
+    .map((location) => syncTargetLocation({ location }))
+    .filter((target) => centerForTarget(target));
+}
+
 function locationProviderRouting(searchScope = {}) {
   const target = searchScope.targetLocation
     ?? searchScope.targetArea
     ?? (typeof searchScope.location === 'string' ? syncTargetLocation(searchScope) : null);
   const targetText = target?.text ?? target?.canonicalName ?? searchScope.location ?? null;
   if (!targetText && !target) return null;
+  const targets = alternativeLocationTargets(searchScope, target)
+    .filter((candidateTarget) => centerForTarget(candidateTarget));
 
-  if (target?.resolutionStatus === 'unresolved') {
+  if (targets.length === 0) {
     return {
       status: 'unresolved',
       query: targetText,
@@ -300,21 +325,24 @@ function locationProviderRouting(searchScope = {}) {
     };
   }
 
-  const center = centerForTarget(target);
-  if (!center) {
-    return {
-      status: 'unresolved',
-      query: targetText,
-      matchedVenues: [],
-      activeProviderIds: [],
-      matchedVenuesByProvider: {},
-    };
-  }
-
+  const center = centerForTarget(targets[0]);
   const radiusMeters = Number(target.radiusMeters ?? searchScope.radiusMeters ?? 3000);
-  const matchedVenues = configuredVenueCatalog.filter((venue) => (
-    venue.enabled !== false && venueWithinTarget(venue, target, radiusMeters)
-  )).sort((a, b) => venueDistanceFromTarget(a, target) - venueDistanceFromTarget(b, target));
+  const requestedSettings = new Set(searchScope.venueSettings ?? []);
+  const hasSettingPreference = requestedSettings.size > 0;
+  const settingMatches = (venue) => !hasSettingPreference
+    || (venue.settings ?? []).some((setting) => requestedSettings.has(setting));
+  const matchedVenues = configuredVenueCatalog.filter((venue) => {
+    if (venue.enabled === false || !settingMatches(venue)) return false;
+    if (searchScope.locationSource === 'sydney_fallback' && hasSettingPreference) return true;
+    return targets.some((candidateTarget) => venueWithinTarget(
+      venue,
+      candidateTarget,
+      Number(candidateTarget.radiusMeters ?? radiusMeters),
+    ));
+  }).sort((a, b) => (
+    Math.min(...targets.map((candidateTarget) => venueDistanceFromTarget(a, candidateTarget)))
+      - Math.min(...targets.map((candidateTarget) => venueDistanceFromTarget(b, candidateTarget)))
+  ));
   if (matchedVenues.length === 0) {
     return {
       status: 'no_provider_coverage',
@@ -335,6 +363,7 @@ function locationProviderRouting(searchScope = {}) {
     query: targetText,
     center,
     radiusMeters,
+    targets,
     matchedVenues: matchedVenues.map((venue) => ({
       id: venue.id,
       name: venue.name,
@@ -554,6 +583,14 @@ function contextLocationSource(profile, {
   return { kind: 'sydney_fallback', value: cloneTarget(SYDNEY_FALLBACK_LOCATION) };
 }
 
+function preferredVenueSettings(profile = {}) {
+  return [...new Set((profile.preferences ?? [])
+    .filter((preference) => preference.feature === 'venue_setting' && preference.type !== 'hard')
+    .flatMap((preference) => preference.rule?.include ?? preference.rule?.values ?? [])
+    .map((setting) => String(setting).trim().toLowerCase())
+    .filter(Boolean))];
+}
+
 function scopeWithRouting(baseScope, targetLocation, sourceKind, { now = new Date() } = {}) {
   const temporalWindow = resolveTemporalWindow({
     dateRange: baseScope.dateRange,
@@ -626,7 +663,10 @@ function scopeWithRouting(baseScope, targetLocation, sourceKind, { now = new Dat
 }
 
 function searchScopeForProfile(profile) {
-  const baseScope = jsonClone(profile.searchScope ?? {});
+  const baseScope = {
+    ...jsonClone(profile.searchScope ?? {}),
+    venueSettings: preferredVenueSettings(profile),
+  };
   const source = contextLocationSource(profile);
   const targetLocation = source.kind === 'sydney_fallback'
     ? cloneTarget(SYDNEY_FALLBACK_LOCATION)
@@ -635,7 +675,10 @@ function searchScopeForProfile(profile) {
 }
 
 async function searchScopeForProfileContext(profile, options = {}) {
-  const baseScope = jsonClone(profile.searchScope ?? {});
+  const baseScope = {
+    ...jsonClone(profile.searchScope ?? {}),
+    venueSettings: preferredVenueSettings(profile),
+  };
   const source = contextLocationSource(profile, options);
   const targetLocation = source.kind === 'sydney_fallback'
     ? cloneTarget(SYDNEY_FALLBACK_LOCATION)
@@ -846,10 +889,12 @@ function serializeNearbyCourt(venue, distanceKm) {
     liveAvailability: false,
     realtimeAvailability: Boolean(venue.realtimeAvailability),
     booking: venue.booking?.url ? venue.booking : null,
+    venueUrl: venue.venueUrl ?? null,
     courtCount: venue.courtCount ?? null,
     surface: venue.surface ?? null,
     provider: venue.provider ?? null,
     verificationStatus: venue.verificationStatus,
+    settings: venue.settings ?? [],
   };
 }
 
@@ -857,7 +902,9 @@ function selectNearbyCourts(searchScope = {}, tierOneEntries = [], {
   limit = 5,
   inventory = canonicalVenueInventory(),
 } = {}) {
-  if (searchScope.locationSource !== 'explicit') return [];
+  const requestedSettings = new Set(searchScope.venueSettings ?? []);
+  const settingSearch = requestedSettings.size > 0;
+  if (searchScope.locationSource !== 'explicit' && !settingSearch) return [];
   const target = searchScope.targetLocation;
   if (!centerForTarget(target)) return [];
 
@@ -869,6 +916,7 @@ function selectNearbyCourts(searchScope = {}, tierOneEntries = [], {
       venue.verificationStatus === 'verified'
       && venue.sport === 'tennis'
       && venue.realtimeAvailability === false
+      && (!settingSearch || (venue.settings ?? []).some((setting) => requestedSettings.has(setting)))
       && !excluded.has(venue.id)
       && !excluded.has(canonicalVenueKey(venue.name))
     ))
@@ -876,7 +924,10 @@ function selectNearbyCourts(searchScope = {}, tierOneEntries = [], {
       venue,
       distanceKm: nearbyCourtDistanceKm(venue, target),
     }))
-    .filter((entry) => Number.isFinite(entry.distanceKm) && entry.distanceKm * 1000 <= radiusMeters)
+    .filter((entry) => Number.isFinite(entry.distanceKm)
+      && (settingSearch && searchScope.locationSource !== 'explicit'
+        ? true
+        : entry.distanceKm * 1000 <= radiusMeters))
     .sort((a, b) => a.distanceKm - b.distanceKm || a.venue.name.localeCompare(b.venue.name))
     .slice(0, limit)
     .map((entry) => serializeNearbyCourt(entry.venue, entry.distanceKm));
@@ -1040,8 +1091,14 @@ function serializeRun({
     nearbyCourts,
     replanning: result.iterations.map((iteration) => ({
       iteration: iteration.iteration,
+      source: iteration.source,
       evaluation: compactEvaluation(iteration.evaluation),
       action: iteration.action,
+      reason: iteration.reason,
+      validationFailure: iteration.validationFailure,
+      diagnosticsSummary: iteration.diagnosticsSummary,
+      stateBefore: iteration.stateBefore,
+      stateAfter: iteration.stateAfter,
       candidateCount: iteration.candidateCount,
       searchScope: iteration.searchScope,
     })),
@@ -1054,11 +1111,15 @@ async function recommendCourts({
   profileLocation = null,
   locationResolver = null,
   mapsProvider = null,
+  preferenceProvider = null,
   temporalPolicyProvider = null,
+  replannerProvider = null,
+  replannerMode = null,
+  observeCandidates = null,
   userProfile = null,
   recentBehavior = {},
   now = new Date(),
-  maxIterations = Number(process.env.RECOMMEND_MAX_ITERATIONS ?? 2),
+  maxIterations = null,
   minCandidates = Number(process.env.RECOMMEND_MIN_CANDIDATES ?? 1),
   totalBudgetMs = Number(process.env.RECOMMEND_TOTAL_BUDGET_MS ?? 90000),
   providerTimeoutMs = Number(process.env.PROVIDER_TIMEOUT_MS ?? 12000),
@@ -1076,9 +1137,14 @@ async function recommendCourts({
 
   const startedAt = now.toISOString();
   await loadEnvFile();
+  const selectedReplannerMode = replannerMode ?? process.env.REPLANNER_MODE ?? 'llm';
+  const selectedMaxIterations = maxIterations ?? Number(process.env.RECOMMEND_MAX_ITERATIONS ?? 3);
+  const selectedReplannerProvider = selectedReplannerMode === 'heuristic'
+    ? null
+    : replannerProvider ?? createOpenAiReplannerProvider();
   let requestPreferences;
   try {
-    requestPreferences = await interpretPreferences(request, { now });
+    requestPreferences = await interpretPreferences(request, { provider: preferenceProvider, now });
   } catch (error) {
     return {
       ok: false,
@@ -1155,12 +1221,13 @@ async function recommendCourts({
 
   try {
     const result = await runReplanningLoop(initialState, {
-      observe: (state) => observeRealCandidates(state, {
-        signal: budgetController.signal,
-        providerTimeoutMs,
-        susfProviderTimeoutMs,
-      }),
-      maxIterations,
+      provider: selectedReplannerProvider,
+      observe: observeCandidates ?? ((state) => observeRealCandidates(state, {
+          signal: budgetController.signal,
+          providerTimeoutMs,
+          susfProviderTimeoutMs,
+        })),
+      maxIterations: selectedMaxIterations,
       minCandidates,
     });
     return serializeRun({ request, profile: runtimeProfile, result, startedAt });

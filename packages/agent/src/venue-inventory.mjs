@@ -1,5 +1,7 @@
 import { DEFAULT_BOOKABLE_VENUES } from '../../bookable/src/index.mjs';
 import { DEFAULT_INTRAC_VENUES } from '../../intrac/src/index.mjs';
+import { DEFAULT_CLUBSPARK_VENUES } from '../../clubspark/src/index.mjs';
+import { DEFAULT_MINDBODY_VENUES } from '../../mindbody/src/index.mjs';
 import { DEFAULT_SPORTLOGIC_VENUES } from '../../sportlogic/src/index.mjs';
 import { DEFAULT_UNIFIED_BOOKINGS_VENUES } from '../../unified-bookings/src/index.mjs';
 
@@ -9,6 +11,8 @@ const REALTIME_PROVIDERS = new Set([
   'susf',
   'bookable',
   'intrac',
+  'clubspark',
+  'mindbody',
   'sportlogic',
   'unified-bookings',
 ]);
@@ -187,18 +191,6 @@ const STATIC_TENNIS_VENUES = Object.freeze([
     verificationSourceUrl: 'https://www.citycommunitytennis.com.au/locations',
   },
   {
-    id: 'static-rushcutters-bay-park',
-    name: 'Rushcutters Bay Park Tennis Courts',
-    suburb: 'Rushcutters Bay',
-    area: 'CBD / Inner City / Central',
-    location: { lat: -33.8751, lng: 151.233 },
-    officialUrl: 'https://www.rushcuttersbaytennis.com.au/',
-    courtCount: 5,
-    surface: null,
-    priceKnown: true,
-    verificationSourceUrl: 'https://www.rushcuttersbaytennis.com.au/',
-  },
-  {
     id: 'static-trumper-park-tennis-centre',
     name: 'Trumper Park Tennis Centre',
     suburb: 'Paddington',
@@ -216,7 +208,7 @@ const STATIC_TENNIS_VENUES = Object.freeze([
     suburb: 'Paddington',
     area: 'CBD / Inner City / Central',
     location: { lat: -33.8825, lng: 151.229 },
-    officialUrl: 'https://www.whitecitytennis.com.au/court-hire',
+    officialUrl: 'https://whitecity.intennis.com.au/secure/customer/booking/v2/public/venue/1',
     courtCount: 6,
     surface: 'artificial grass',
     priceKnown: false,
@@ -252,12 +244,28 @@ const STATIC_TENNIS_VENUES = Object.freeze([
     suburb: 'Coogee',
     area: 'Eastern Suburbs',
     location: { lat: -33.9208, lng: 151.2522 },
-    officialUrl: 'https://www.randwick.nsw.gov.au/',
+    officialUrl: 'https://www.randwick.nsw.gov.au/facilities-and-recreation/parks/parks-by-suburb/coogee/baker-park',
     bookingCapability: null,
     courtCount: null,
     surface: null,
     priceKnown: false,
-    verificationSourceUrl: 'https://www.randwick.nsw.gov.au/',
+    verificationSourceUrl: 'https://www.randwick.nsw.gov.au/facilities-and-recreation/parks/parks-by-suburb/coogee/baker-park',
+    settings: ['coastal', 'scenic', 'beach_nearby'],
+  },
+  {
+    id: 'static-langham-sydney-tennis-court',
+    name: 'The Langham Sydney Tennis Court',
+    suburb: 'Millers Point',
+    area: 'Sydney CBD / Inner City',
+    location: { lat: -33.8599, lng: 151.2037 },
+    officialUrl: 'https://langham.intrac.com.au/tennis/book.cfm',
+    bookingCapability: 'booking_page',
+    courtCount: 1,
+    surface: 'hard',
+    priceKnown: true,
+    verificationSourceUrl: 'https://www.langhamhotels.com/en/the-langham/sydney/wellness/tennis/',
+    needsProviderFeasibility: true,
+    settings: ['scenic', 'harbour', 'city_view'],
   },
   {
     id: 'static-mutch-park-tennis-centre',
@@ -406,6 +414,7 @@ function bookingCapabilityForProvider(provider, venue) {
   if (!venue.officialUrl) return null;
   if (provider === 'sportlogic') return 'court_date_time_preselected';
   if (provider === 'intrac') return 'date_time_preselected';
+  if (provider === 'clubspark') return 'court_date_time_preselected';
   return 'booking_page';
 }
 
@@ -445,6 +454,8 @@ function normalizeVenue(venue, {
       url: bookingUrl,
       capability: bookingUrl ? bookingCapability : null,
     },
+    venueUrl: merged.officialUrl ?? null,
+    settings: [...new Set(merged.settings ?? [])],
     courtCount: merged.courtCount ?? merged.auditCourtCount ?? null,
     surface: merged.surface ?? null,
     priceKnown: Boolean(merged.priceKnown ?? ['susf', 'bookable', 'sportlogic'].includes(merged.provider)),
@@ -457,6 +468,8 @@ function configuredRealtimeVenues() {
   return [
     SUSF_CONFIGURED_VENUE,
     ...DEFAULT_INTRAC_VENUES,
+    ...DEFAULT_CLUBSPARK_VENUES,
+    ...DEFAULT_MINDBODY_VENUES,
     ...DEFAULT_SPORTLOGIC_VENUES,
     ...DEFAULT_UNIFIED_BOOKINGS_VENUES,
     ...DEFAULT_BOOKABLE_VENUES,

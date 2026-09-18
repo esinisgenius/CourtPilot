@@ -6,6 +6,8 @@ import {
 } from '../packages/core/src/index.mjs';
 import { DEFAULT_BOOKABLE_VENUES } from '../packages/bookable/src/index.mjs';
 import { DEFAULT_INTRAC_VENUES } from '../packages/intrac/src/index.mjs';
+import { DEFAULT_CLUBSPARK_VENUES } from '../packages/clubspark/src/index.mjs';
+import { DEFAULT_MINDBODY_VENUES } from '../packages/mindbody/src/index.mjs';
 import { DEFAULT_SPORTLOGIC_VENUES } from '../packages/sportlogic/src/index.mjs';
 import { DEFAULT_UNIFIED_BOOKINGS_VENUES } from '../packages/unified-bookings/src/index.mjs';
 import {
@@ -28,6 +30,8 @@ const CONFIGURED_VENUES = [
   SUSF_CONFIGURED_VENUE,
   ...DEFAULT_BOOKABLE_VENUES,
   ...DEFAULT_INTRAC_VENUES,
+  ...DEFAULT_CLUBSPARK_VENUES,
+  ...DEFAULT_MINDBODY_VENUES,
   ...DEFAULT_SPORTLOGIC_VENUES,
   ...DEFAULT_UNIFIED_BOOKINGS_VENUES,
 ].filter((venue) => venue.enabled !== false);
@@ -75,7 +79,7 @@ test('canonical venue inventory separates static coverage from realtime availabi
     }
 
     if (venue.realtimeAvailability) {
-      assert.equal(['susf', 'bookable', 'intrac', 'sportlogic', 'unified-bookings'].includes(venue.provider), true);
+      assert.equal(['susf', 'bookable', 'clubspark', 'intrac', 'mindbody', 'sportlogic', 'unified-bookings'].includes(venue.provider), true);
     }
   }
 });

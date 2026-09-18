@@ -34,6 +34,20 @@ const DEFAULT_PROVIDER_REGISTRY = Object.freeze([
     stage: 'expanded',
     enabled: true,
   },
+  {
+    id: 'clubspark',
+    provider: 'clubspark',
+    displayName: 'Configured ClubSpark tennis venues',
+    stage: 'expanded',
+    enabled: true,
+  },
+  {
+    id: 'mindbody',
+    provider: 'mindbody',
+    displayName: 'Configured Mindbody tennis venues',
+    stage: 'expanded',
+    enabled: true,
+  },
 ]);
 
 function enabledProviderIds(registry = DEFAULT_PROVIDER_REGISTRY, stage) {

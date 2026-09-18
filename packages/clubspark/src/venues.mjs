@@ -1,0 +1,36 @@
+const DEFAULT_CLUBSPARK_VENUES = Object.freeze([
+  {
+    id: 'clubspark-pinecourt-tennis-club',
+    name: 'Pinecourt Tennis Club',
+    suburb: 'Austinmer',
+    address: 'Headland Avenue, Austinmer NSW 2515',
+    location: { lat: -34.300791, lng: 150.939679 },
+    geoSource: 'clubspark_contact_page',
+    geoConfidence: 'high',
+    provider: 'clubspark',
+    sport: 'tennis',
+    officialUrl: 'https://play.tennis.com.au/pinecourttennisclub/booking/bookbydate',
+    venueSlug: 'pinecourttennisclub',
+    enabled: true,
+    auditCourtCount: 2,
+    settings: ['coastal', 'scenic', 'ocean_nearby'],
+  },
+  {
+    id: 'clubspark-kiama-blowhole-tennis-club',
+    name: 'Kiama Blowhole Tennis Club',
+    suburb: 'Kiama',
+    address: 'Blowhole Point Road, Kiama NSW 2533',
+    location: { lat: -34.671264, lng: 150.861308 },
+    geoSource: 'clubspark_contact_page',
+    geoConfidence: 'high',
+    provider: 'clubspark',
+    sport: 'tennis',
+    officialUrl: 'https://play.tennis.com.au/kiamablowholetennisclub/booking/bookbydate',
+    venueSlug: 'kiamablowholetennisclub',
+    enabled: true,
+    auditCourtCount: 2,
+    settings: ['coastal', 'scenic', 'ocean_view'],
+  },
+]);
+
+export { DEFAULT_CLUBSPARK_VENUES };

@@ -560,6 +560,39 @@ test('searchScope validates relative date range and semantic period', () => {
   assert.equal(profile.searchScope.timeWindow.period, 'evening');
 });
 
+test('coastal and scenic language becomes a venue setting soft preference', () => {
+  const profile = normalizePreferenceProfile({
+    version: 2,
+    searchScope: { days: 7 },
+    preferences: [],
+    hardConstraints: [],
+    objectives: [],
+    unresolvedPreferences: [],
+  }, { sourceText: '想找海边风景好的球场' });
+
+  const setting = findItem(profile.preferences, 'venue_setting');
+  assert.deepEqual(setting.rule.include, ['coastal', 'scenic']);
+  assert.equal(setting.type, 'soft');
+  assert.equal(setting.relaxable, true);
+  assert.equal(setting.relaxationDirection, 'other_venues');
+});
+
+test('generic coastal wording is not preserved as a fake explicit location', () => {
+  const profile = normalizePreferenceProfile({
+    version: 2,
+    searchScope: { days: 7, location: '海边' },
+    preferences: [],
+    hardConstraints: [{ feature: 'venue_setting', type: 'hard', importance: 'high', rule: { include: ['coastal'] } }],
+    objectives: [],
+    unresolvedPreferences: [],
+  }, { sourceText: '找个海边球场' });
+
+  assert.equal(profile.searchScope.location, undefined);
+  assert.equal(profile.searchScope.isExplicit, false);
+  assert.equal(profile.hardConstraints.some((item) => item.feature === 'venue_setting'), false);
+  assert.deepEqual(findItem(profile.preferences, 'venue_setting').rule.include, ['coastal']);
+});
+
 test('source text infers next weekday and USYD location search scope', () => {
   const profile = validatePreferenceProfile(normalizePreferenceProfile(baseProfile({
     searchScope: {

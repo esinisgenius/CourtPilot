@@ -10,6 +10,7 @@ import {
   defaultSearchHeadlessMode,
   discoverTennisCourtsFromFacilities,
   extractRateTableFromHtml,
+  selectSusfSlotPrice,
   isAvailabilityTriggerText,
   normalizeAvailability,
   prepareAvailabilityRequest,
@@ -73,6 +74,36 @@ test('rate amount is number and currency is AUD', () => {
 
 test('missing rate table returns empty options clearly', () => {
   assert.deepEqual(extractRateTableFromHtml('<html>No prices here</html>'), []);
+});
+
+test('SUSF slot price selects off-peak rates on weekdays and peak rates on weekends', () => {
+  const court123Rates = [
+    { name: 'Tennis Peak Fee', amount: 50, currency: 'AUD', durationMinutes: 60 },
+    { name: 'Tennis Off-Peak Fee', amount: 39, currency: 'AUD', durationMinutes: 60 },
+  ];
+  const court456Rates = [
+    { name: 'Tennis Off-Peak Fee', amount: 29, currency: 'AUD', durationMinutes: 60 },
+    { name: 'Tennis Peak Fee', amount: 39, currency: 'AUD', durationMinutes: 60 },
+  ];
+
+  assert.deepEqual(selectSusfSlotPrice('2026-09-18', court123Rates), {
+    amount: 39,
+    currency: 'AUD',
+    confidence: 'verified',
+  });
+  assert.equal(selectSusfSlotPrice('2026-09-19', court123Rates).amount, 50);
+  assert.equal(selectSusfSlotPrice('2026-09-18', court456Rates).amount, 29);
+  assert.equal(selectSusfSlotPrice('2026-09-20', court456Rates).amount, 39);
+});
+
+test('SUSF slot price stays unknown when the applicable named rate is absent', () => {
+  assert.deepEqual(selectSusfSlotPrice('2026-09-19', [
+    { name: 'Tennis Off-Peak Fee', amount: 29, currency: 'AUD', durationMinutes: 60 },
+  ]), {
+    amount: null,
+    currency: 'AUD',
+    confidence: 'unknown',
+  });
 });
 
 test('availability request construction uses public anti-forgery token and strips auth-specific headers', () => {

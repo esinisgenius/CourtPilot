@@ -549,6 +549,15 @@ function bookingLabel(booking, context = 'candidate') {
   return 'View booking';
 }
 
+function renderVenueAction(venueUrl) {
+  if (!venueUrl) return '';
+  return `
+    <a class="book-link" href="${escapeHtml(venueUrl)}" target="_blank" rel="noopener noreferrer">
+      View venue ↗
+    </a>
+  `;
+}
+
 function renderBookingAction(booking, candidate = null, context = 'candidate') {
   if (!booking?.url) return '';
   const behaviorAttrs = candidate ? [
@@ -667,7 +676,7 @@ function renderNearbyCourts(response) {
             ${meta.map((item) => `<span>${escapeHtml(item)}</span>`).join('')}
           </div>
         </div>
-        ${renderBookingAction(venue.booking, null, 'nearby')}
+        ${venue.booking?.url ? renderBookingAction(venue.booking, null, 'nearby') : renderVenueAction(venue.venueUrl)}
       </article>
     `;
   }).join('');

@@ -69,6 +69,7 @@ function buildInterpreterMessages(text) {
         'For 更愿意坐公交 or prefer transit: set transportPreference.preferredTransportModes=["TRANSIT"] and add a soft travel_time preference with rule.preferredTransportModes=["TRANSIT"]. For 开车也可以: include DRIVE in preferredTransportModes only as an acceptable/preferred soft mode; do not make other modes forbidden.',
         'Phrases such as 远一点也行, farther is OK, or a bit longer is fine mean the travel_time preference is soft and relaxable with relaxationDirection=longer_travel_time, not a hard constraint.',
         'Use duration for requested play length. Use consecutive_availability for two continuous hours or a following-hour-free requirement. Use court_count and adjacency for multiple adjacent courts.',
+        'Use venue_setting as a soft preference for scenery or surroundings. Normalize 海边/靠海/海景/beach/coastal/ocean/seaside to rule.include coastal; 风景好/景色好/scenic/nice view to scenic; 海港/港景/harbour/harbor to harbour. Never treat these words as a precise location or a hard constraint.',
         'Preserve short sourceText evidence wherever supported. Prefer conservative interpretation when genuinely ambiguous.',
         'Few-shot examples:',
         'Input: 17点以后都可以，越早越好. Output meaning: hardConstraints has start_time after 17:00; objectives has start_time earlier.',

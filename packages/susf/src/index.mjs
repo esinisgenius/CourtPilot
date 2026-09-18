@@ -12,6 +12,7 @@ export {
   getSusfAvailability,
   isAvailabilityTriggerText,
   normalizeRateTableFromPriceArrays,
+  selectSusfSlotPrice,
   readSusfAvailability,
   toPublicAvailability,
 } from './availability.mjs';

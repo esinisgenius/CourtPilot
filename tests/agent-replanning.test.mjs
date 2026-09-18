@@ -7,7 +7,6 @@ import {
   REPLANNING_ACTIONS,
   EVALUATOR_STATUS,
   ReplannerError,
-  ReplanningActionSchemaError,
   chooseReplanningAction,
   createInitialAgentState,
   evaluateCandidateSet,
@@ -731,9 +730,8 @@ test('no-candidate replanner asks user after broad automatic expansions were alr
   assert.equal(action.selectedAction, REPLANNING_ACTIONS.ASK_USER);
 });
 
-test('unknown provider action is rejected', async () => {
-  await assert.rejects(
-    () => chooseReplanningAction(state({ candidates: [] }), {
+test('unknown provider action uses heuristic fallback', async () => {
+  const action = await chooseReplanningAction(state({ candidates: [] }), {
       provider: {
         async choose() {
           return {
@@ -744,9 +742,8 @@ test('unknown provider action is rejected', async () => {
           };
         },
       },
-    }),
-    (error) => error instanceof ReplanningActionSchemaError,
-  );
+    });
+  assert.equal(action.selectedAction, REPLANNING_ACTIONS.EXPAND_RADIUS);
 });
 
 test('bounded Real LLM Replanner rejects older non-Maps search actions', () => {
@@ -899,6 +896,7 @@ test('synthetic Maps replanning expands radius switches area then reaches satisf
   assert.deepEqual(proposedActions, [
     REPLANNING_ACTIONS.EXPAND_RADIUS,
     REPLANNING_ACTIONS.SWITCH_SEARCH_AREA,
+    REPLANNING_ACTIONS.SATISFACTORY,
   ]);
   assert.deepEqual(result.iterations.map((iteration) => iteration.candidateCount), [0, 0, 1]);
   assert.deepEqual(observedRadii, [3000, 5000, 3000]);
@@ -907,7 +905,18 @@ test('synthetic Maps replanning expands radius switches area then reaches satisf
 });
 
 test('Agent expands from preferred SUSF scope to Bookable only after replanning action', async () => {
+  const preferredCourtProfile = profile([
+    {
+      feature: 'court',
+      type: 'soft',
+      value: 'Court 4',
+      priority: 'high',
+      importance: 'high',
+      relaxable: true,
+    },
+  ]);
   const initialState = state({
+    preferences: preferredCourtProfile,
     candidates: [],
     searchScope: {
       courtScope: { includeNonPreferred: false },
@@ -1133,7 +1142,7 @@ test('explicit location prevents provider expansion outside geographic routing',
   );
 });
 
-test('duplicate provider expansion is rejected deterministically', async () => {
+test('duplicate provider expansion falls back without crashing the loop', async () => {
   const currentState = state({
     candidates: [],
     searchScope: {
@@ -1145,8 +1154,7 @@ test('duplicate provider expansion is rejected deterministically', async () => {
     },
   });
 
-  await assert.rejects(
-    () => runReplanningLoop(currentState, {
+  const result = await runReplanningLoop(currentState, {
       provider: {
         async choose() {
           return {
@@ -1158,9 +1166,10 @@ test('duplicate provider expansion is rejected deterministically', async () => {
         },
       },
       maxIterations: 4,
-    }),
-    /No configured provider expansion remains/,
-  );
+    });
+  assert.equal(result.status, 'ASKING_USER');
+  assert.equal(result.iterations[0].source, 'heuristic_fallback');
+  assert.match(result.iterations[0].validationFailure.message, /provider expansion remains/);
 });
 
 test('both providers exhausted reaches bounded terminal behavior', async () => {
