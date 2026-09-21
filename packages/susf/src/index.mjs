@@ -2,6 +2,7 @@ export {
   DEFAULT_BOOKING_URL,
   DEFAULT_CAPTURE_TIMEOUT_MS,
   SusfAvailabilityError,
+  buildCourtBookingUrl,
   buildRankedCandidates,
   defaultSearchHeadlessMode,
   discoverTennisCourtsFromFacilities,

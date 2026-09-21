@@ -1,201 +1,240 @@
-# TennisAgent
+# CourtPilot 
 
-A preference-aware tennis court search agent for Sydney that can diagnose failed searches and safely replan while deterministic code protects hard constraints.
+CourtPilot is a preference-aware tennis court recommendation agent for Sydney.
 
-## Problem
+It is built for a very common tennis-player problem: you do not just want "any available court". You want the court that best fits a messy bundle of real preferences: close enough, not too expensive, playable at the right time, maybe two hours in a row, maybe a familiar venue, maybe acceptable weather. Most booking sites force that into rigid filters. CourtPilot lets the player describe what matters in natural language, then turns that into a structured search and ranking workflow.
 
-Tennis court search is awkward because availability is fragmented across providers, and the user's real preferences are often fuzzy or conflicting: price, travel time, preferred courts, time windows, weather, and whether two continuous hours are available. A fixed filter workflow can easily return no result without knowing which preference to relax next.
+This is a search and recommendation product. It does not book courts, hold courts, check out, or pay.
 
-TennisAgent treats explicit constraints as rules and soft preferences as trade-offs. The LLM helps interpret and reason about ambiguous preferences, while code owns factual checks, filtering, bounded replanning, and termination.
+## Why This Exists
 
-## Example
+Finding a tennis court is deceptively annoying:
 
-User preference:
+- Availability is scattered across multiple providers and booking systems.
+- A good result depends on trade-offs, not a single filter.
+- Players often know their preference in words, but not in numeric weights.
+- "No result" is rarely the end of the story; the product should know whether to widen location, relax preferred courts, shift time, or ask the user.
+- Live booking providers are production systems, so the agent must be conservative and cache-aware.
 
-> Tomorrow after 5 PM, prefer Court 4/5/6, cheaper if possible, ideally two consecutive hours.
+Example preference:
 
-Compact replanning trace:
+> 我主要想便宜，最好我订一小时后后面也没人，13点前或者17点以后都行。
 
-```text
-Observation:
-preferred courts unavailable
+CourtPilot should understand this as:
 
-Evaluation:
-NO_FEASIBLE_CANDIDATES
+- cheaper is important;
+- the next hour also being free is important;
+- before 13:00 or after 17:00 is preferred;
+- these are mostly soft preferences unless the user states a hard rule.
 
-Failure diagnosis:
-preferred_courts_unavailable
+The user should not need to write fake weights like `price = 0.4`, `time = 0.25`.
 
-Replanning action:
-INCLUDE_NONPREFERRED_COURTS
-
-New observation:
-a feasible non-preferred court becomes available
-
-Final:
-SATISFACTORY
-```
-
-This is a behavioral pattern covered by the agent eval suite. The README does not claim a specific live court, price, or provider result for that example.
-
-## Agent Architecture
+## Product Flow
 
 ```text
-User Preference
-      |
-      v
-Search / Observe
-      |
-      v
-Hard Constraint Filter
-      |
-      v
-Rank Candidates
-      |
-      v
-Evaluate Result
-      |
-      v
-Failure Diagnosis
-      |
-      v
-Bounded LLM Replanner
-      |
-      v
-Deterministic Executor
-      |
-      v
-Re-observe
+Natural-language preference
+        |
+        v
+Preference Interpreter
+        |
+        v
+Structured Preference Profile
+        |
+        v
+Provider availability adapters
+        |
+        v
+Candidate feature extraction
+        |
+        v
+Hard constraint filtering
+        |
+        v
+Deterministic reduction
+        |
+        v
+LLM or fallback ranking
+        |
+        v
+Top recommendations with reasons
 ```
 
-Deterministic code:
+The product separates two kinds of user intent:
 
-- enforces hard constraints before ranking;
-- computes factual candidate attributes from provider/API data;
-- defines the legal replanning action contract;
-- executes bounded state changes such as expanding radius or including non-preferred courts;
-- controls max iterations and termination;
-- provides deterministic ranking fallback when the LLM ranker fails.
+- Hard constraints: deterministic rules. If a candidate violates one, it is rejected before ranking.
+- Soft preferences: trade-offs. These are ranked after factual candidate data has been computed.
 
-LLM components:
+That split is the core product bet: LLMs handle ambiguity; code protects facts, constraints, and safety.
 
-- interpret natural-language preferences into a structured Preference Profile;
-- reason over soft-preference trade-offs and failure context;
-- rank hard-filtered candidates when a ranker provider is available;
-- select among bounded legal replanning actions where appropriate.
+## What The Agent Returns
 
-The LLM is not allowed to freely relax explicit hard constraints, invent missing facts, create candidates, or modify factual availability.
+The recommendation slate is designed to explain the trade-off, not just show a slot:
 
-## Failure-Aware Replanning
+- court and venue;
+- date, start time, and duration;
+- whether the next hour is also available;
+- price only when actually fetched;
+- weather and travel facts when available;
+- reasons grounded in candidate attributes;
+- uncertainty when the current facts are incomplete.
 
-The replanner uses failed constraints and observation context instead of defaulting to generic expansion. Supported examples include:
+The agent can also diagnose failed searches. For example, if preferred courts are unavailable, it can try non-preferred courts as a bounded replanning action. If a hard time window makes every result invalid, it should not silently relax that rule.
 
-```text
-preferred_courts_unavailable
-  -> INCLUDE_NONPREFERRED_COURTS
+## Technical Implementation
 
-no_availability_in_time_window
-  -> bounded SHIFT_TIME_WINDOW while preserving hard temporal boundaries
-```
+### Preference Interpretation
 
-The execution step is deterministic: each accepted action must be in the legal contract and must change search state or stop/ask the user.
+`packages/preferences` turns natural-language text into a strict Preference Profile. The OpenAI path uses structured output, and the schema preserves ordinal importance such as `hard`, `high`, `medium`, `low`, and `uncertain`.
 
-## Safety Invariants
+The interpreter is not asked to invent precise utility weights. If the relationship is unclear, it marks uncertainty rather than making up a preference.
 
-- Explicit hard constraints are never silently relaxed.
-- Hard-invalid candidates are filtered before ranking.
-- Missing facts are not treated as constraint violations.
-- Replanning actions must come from a bounded legal action contract.
-- Replanning must change state or observation instead of looping in place.
-- The agent terminates after bounded iterations.
-- Booking, checkout, and payment automation are out of scope.
+### Availability And Candidate Facts
 
-## Evaluation
+`packages/susf` owns the SUSF / PerfectMind integration. The adapter:
 
-Current verified results:
+- uses manual login with Playwright storage state;
+- discovers real court and facility identifiers from the page/DOM;
+- captures the provider request shape from the real booking flow;
+- queries availability for Court 4 / 5 / 6 without hardcoding provider tokens;
+- normalizes slots into candidate-ready availability records;
+- computes `nextHourAlsoAvailable` from actual adjacent availability.
 
-```text
-npm test: 284 passed, 0 failed
-npm run eval:agent-behavior: 14 passed, 0 failed
-```
+Other provider packages are present for broader venue coverage:
 
-The behavior regression suite covers:
+- `packages/bookable`
+- `packages/sportlogic`
+- `packages/intrac`
+- `packages/unified-bookings`
 
-- initially satisfactory results;
-- mild soft-preference violations;
-- missing consecutive two-hour slots;
-- preferred court unavailability;
-- hard time-window constraints;
-- hard transit limits;
-- missing accessibility facts;
-- ranking trade-offs;
-- ranker fallback;
-- observation changes after replanning;
-- max-iteration termination;
-- ambiguous cases requiring `ASK_USER` / `STOP`;
-- hard filtering before ranking.
+`packages/core` then builds candidate facts, applies hard constraints, evaluates eligibility, and enriches candidates with supported factual attributes.
 
-These evals are regression coverage for a bounded scenario set, not proof of universal production reliability.
+### Weather, Location, And Travel
 
-## Tech Stack
+`packages/weather` uses Open-Meteo with caching.
 
-- Node.js ES modules
-- Playwright for authenticated SUSF / PerfectMind availability access
-- OpenAI structured output for preference interpretation and optional LLM ranking/replanning
-- Open-Meteo weather enrichment
-- Google Maps Platform adapters for location, venue, and travel-time facts
-- Node's built-in test runner
+`packages/maps` contains location resolution, canonical Sydney play areas, radius handling, venue discovery, travel-time checks, and accessibility facts. These facts are used as inputs to constraints and ranking; the LLM should not guess them.
 
-## Repository Structure
+### Ranking
 
-```text
-packages/agent        bounded replanning loop, evaluator, actions, search scope
-packages/core         candidate features, hard constraints, enrichment contracts
-packages/preferences  Preference Profile schema, interpreter, local store
-packages/ranking      LLM ranker interface and deterministic fallback ranker
-packages/susf         SUSF / PerfectMind availability adapter
-packages/weather      Open-Meteo adapter and cache
-packages/maps         location, venue discovery, travel time, saved play areas
-packages/bookable     provider adapter
-packages/sportlogic   provider adapter
-packages/intrac       provider adapter
-packages/unified-bookings provider adapter
-eval                  preference and agent behavior eval runners/cases
-tests                 offline unit and behavior tests
-scripts               local CLI checks and demos
-```
+`packages/ranking` supports two paths:
 
-## Quick Start
+- LLM slate ranking for soft-preference trade-offs, using only the supplied Preference Profile and candidate facts.
+- Deterministic fallback ranking when the LLM provider fails, times out, or returns invalid structured output.
+
+The ranker is not allowed to modify candidate facts, create fake availability, invent price, or override hard constraints.
+
+### Replanning
+
+`packages/agent` orchestrates the recommendation loop:
+
+- interpret request and durable preferences;
+- choose provider scope from location and venue signals;
+- observe candidates;
+- filter hard-invalid results;
+- rank the remaining slate;
+- evaluate result quality;
+- diagnose failure;
+- execute a bounded legal replanning action or stop.
+
+Supported replanning behavior includes cases such as including non-preferred courts or bounded time-window adjustment. Replanning must terminate and must change state; it cannot loop indefinitely.
+
+## Local Demo
 
 ```bash
 npm install
-npm test
-npm run eval:agent-behavior
+npm run demo
 ```
 
-Useful local commands:
+Then open:
+
+```text
+http://127.0.0.1:4174/
+```
+
+The demo UI lives in `apps/web`. The `/api/recommend` route calls the real recommendation service, so live results may require local auth, API keys, and provider availability. The checked-in UI can still be inspected as a product prototype without making a booking.
+
+## Useful Commands
+
+```bash
+npm test
+npm run eval:preferences
+npm run eval:agent-behavior
+npm run feasible:synthetic
+```
+
+Preference workflow:
 
 ```bash
 npm run preference:set -- "我主要想便宜，最好后一小时没人，13点前或者17点以后都行"
 npm run preference:show
-npm run feasible:synthetic
 ```
 
-Provider checks exist for SUSF, weather, maps, and other adapters, but some call real external services and may require local auth or API keys. For SUSF, login is manual:
+SUSF manual login and live check:
 
 ```bash
 npm run susf:login
 npm run susf:check
 ```
 
-`preference:set` uses OpenAI structured JSON output and requires `OPENAI_API_KEY`. Maps and live provider checks require their own local configuration. Runtime secrets and personal data under `.auth/`, `.env`, `data/preferences.json`, `data/saved-play-areas.json`, and `output/` are ignored.
+Live provider checks can access third-party services. Prefer offline tests, fixtures, and cached data during normal development.
 
-## Limitations
+## Repository Map
 
-- This is search and recommendation assistance, not autonomous booking or payment.
-- Provider coverage is limited and uneven; verified SUSF availability uses the SUSF / PerfectMind path, while other provider packages are adapter-specific.
-- Live availability depends on external provider reliability, authentication state, and provider page/API changes.
-- Maps-discovered venues are venue-level alternatives unless reconciled to a verified availability source.
-- Candidate-level price mapping is still limited; the system should only display price when it is actually fetched.
-- Behavior evals cover a bounded set of scenarios.
-- Preference interpretation, LLM ranking, and LLM replanning remain provider-dependent, with deterministic fallbacks where implemented.
+```text
+apps/web                  mobile-first demo UI
+packages/agent            recommendation orchestration and bounded replanning
+packages/core             candidate construction, features, constraints, enrichment
+packages/preferences      Preference Profile schema, interpreter, local store
+packages/ranking          LLM slate ranker and deterministic fallback ranker
+packages/susf             SUSF / PerfectMind Playwright adapter
+packages/weather          Open-Meteo adapter and cache
+packages/maps             location, venue, travel time, saved play areas
+packages/bookable         provider adapter
+packages/sportlogic       provider adapter
+packages/intrac           provider adapter
+packages/unified-bookings provider adapter
+eval                      preference, location, parser, H5, and behavior evals
+tests                     offline unit and behavior tests
+scripts                   local CLI checks, login, demo, and diagnostics
+```
+
+## Security And Safety Boundaries
+
+CourtPilot intentionally avoids high-risk automation:
+
+- no automatic booking;
+- no checkout or payment;
+- no CAPTCHA or MFA bypass;
+- no credential collection;
+- no committing `.auth`, `.env`, cookies, CSRF tokens, API keys, or personal preference data.
+
+SUSF login remains manual. The scripts may save Playwright `storageState`, but they must not read, print, or store usernames and passwords.
+
+Real provider access should be conservative:
+
+- avoid repeated live fetches when cached data is sufficient;
+- do not load test, stress test, fuzz, or poll production booking systems;
+- do not retry indefinitely;
+- stop on abnormal provider responses such as `401`, `403`, `429`, or anti-abuse signals.
+
+## Current Limitations
+
+- This is recommendation assistance, not an autonomous booking agent.
+- Provider coverage is uneven, and each booking system has its own reliability risks.
+- Candidate-level price should only be displayed when the system actually fetched it.
+- Maps-discovered venues may be venue-level alternatives unless reconciled with a verified availability source.
+- LLM interpretation, ranking, and replanning depend on provider availability and configured API keys.
+- Evals cover bounded scenarios; they are regression coverage, not a guarantee of universal production correctness.
+
+## Product Direction
+
+The MVP target is simple:
+
+1. Save the user's durable tennis preferences.
+2. Fetch verified availability where supported.
+3. Build factual candidates.
+4. Enforce hard constraints.
+5. Rank soft trade-offs.
+6. Show the top three choices with reasons and uncertainty.
+
+The longer-term direction is preference learning from actual user choices, but the current product records feedback only. It does not automatically rewrite durable preferences from a single interaction.

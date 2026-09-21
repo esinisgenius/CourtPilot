@@ -214,6 +214,7 @@ test('recommendation service preserves the LLM-selected slate order', async () =
     maxIterations: 1,
   });
 
+  assert.equal(result.ok, true, JSON.stringify(result.error ?? result));
   assert.equal(result.summary.rankingMode, 'llm_slate');
   assert.deepEqual(result.candidates.slice(0, 3).map((item) => item.id), [
     'usyd-1000',
@@ -221,6 +222,45 @@ test('recommendation service preserves the LLM-selected slate order', async () =
     'usyd-0800',
   ]);
   assert.match(result.candidates[1].marginalValue, /different choice/);
+});
+
+test('recommendation cards expose current and explicit target distances separately', async () => {
+  const profile = normalizePreferenceProfile({
+    version: 2,
+    searchScope: { location: 'USYD', source: 'user', isExplicit: true },
+    preferences: [],
+    hardConstraints: [],
+    objectives: [],
+    unresolvedPreferences: [],
+  }, { sourceText: 'USYD附近打球', updatedAt: '2026-09-20T02:00:00.000Z' });
+  const candidate = {
+    id: 'usyd-distance',
+    venue: 'SUSF',
+    court: 'Court 4',
+    startTime: '2026-09-21T10:00:00+10:00',
+    durationMinutes: 60,
+    features: {
+      localDate: '2026-09-21',
+      localTime: '10:00',
+      venue: { location: { lat: -33.8885, lng: 151.1873 } },
+    },
+    source: { provider: 'fixture', availability: { status: 'verified', source: 'fixture' } },
+  };
+
+  const result = await recommendCourts({
+    request: 'USYD附近打球',
+    currentLocation: { lat: -33.8775, lng: 151.1035 },
+    now: new Date('2026-09-20T02:00:00.000Z'),
+    preferenceProvider: { async interpret() { return profile; } },
+    replannerMode: 'heuristic',
+    observeCandidates: async () => ({ candidates: [candidate] }),
+    maxIterations: 1,
+  });
+
+  assert.equal(Number.isFinite(result.candidates[0].currentLocationDistanceKm), true);
+  assert.equal(Number.isFinite(result.candidates[0].targetLocationDistanceKm), true);
+  assert.equal(result.candidates[0].distanceKm, result.candidates[0].currentLocationDistanceKm);
+  assert.notEqual(result.candidates[0].currentLocationDistanceKm, result.candidates[0].targetLocationDistanceKm);
 });
 
 test('explicit CBD provider options never fall back to all Bookable venues', () => {

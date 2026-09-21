@@ -161,12 +161,9 @@ function accessibilityOptionsForProfile(profile) {
   };
 }
 
-function candidateDistanceKm(candidate, searchScope = {}) {
-  if (searchScope.locationSource !== 'explicit') return null;
-  const targets = searchScope.locationRouting?.targets?.length
-    ? searchScope.locationRouting.targets
-    : [searchScope.targetLocation];
+function candidateDistanceToTargetsKm(candidate, targets = []) {
   const venue = candidate.features?.venue ?? candidate.source?.canonicalAvailability?.venue ?? null;
+  if (!venue) return null;
   const venuePoint = pointForVenue(venue);
   if (!venuePoint) return null;
   const distances = targets
@@ -174,6 +171,14 @@ function candidateDistanceKm(candidate, searchScope = {}) {
     .filter(Boolean)
     .map((target) => haversineMeters(target, venuePoint) / 1000);
   return distances.length > 0 ? Math.min(...distances) : null;
+}
+
+function candidateDistanceKm(candidate, searchScope = {}) {
+  if (searchScope.locationSource !== 'explicit') return null;
+  const targets = searchScope.locationRouting?.targets?.length
+    ? searchScope.locationRouting.targets
+    : [searchScope.targetLocation];
+  return candidateDistanceToTargetsKm(candidate, targets);
 }
 
 function enrichDistanceFacts(candidates = [], searchScope = {}) {
@@ -939,7 +944,10 @@ function diversifyRankedCandidates(ranked, { limit = 10, explicitTime = false } 
   return selected;
 }
 
-function serializeCandidate(entry, index = entry.ranking.rank - 1) {
+function serializeCandidate(entry, index = entry.ranking.rank - 1, {
+  currentLocation = null,
+  searchScope = null,
+} = {}) {
   const { candidate, ranking } = entry;
   const weather = candidate.features?.weather ?? null;
   const accessibility = candidate.features?.accessibility ?? candidate.accessibility ?? null;
@@ -956,6 +964,12 @@ function serializeCandidate(entry, index = entry.ranking.rank - 1) {
     : venueSurfaces.length === 1
       ? venueSurfaces
       : [];
+  const currentLocationDistanceKm = currentLocation
+    ? candidateDistanceToTargetsKm(candidate, [currentLocation])
+    : null;
+  const targetLocationDistanceKm = searchScope?.locationSource === 'explicit'
+    ? candidateDistanceKm(candidate, searchScope)
+    : null;
 
   return {
     id: candidate.id,
@@ -967,7 +981,9 @@ function serializeCandidate(entry, index = entry.ranking.rank - 1) {
     endTime,
     localDate: candidate.features?.localDate ?? null,
     localTime: candidate.features?.localTime ?? null,
-    distanceKm: Number.isFinite(candidate.features?.distanceKm) ? candidate.features.distanceKm : null,
+    distanceKm: Number.isFinite(currentLocationDistanceKm) ? currentLocationDistanceKm : null,
+    currentLocationDistanceKm: Number.isFinite(currentLocationDistanceKm) ? currentLocationDistanceKm : null,
+    targetLocationDistanceKm: Number.isFinite(targetLocationDistanceKm) ? targetLocationDistanceKm : null,
     durationMinutes: candidate.durationMinutes,
     componentSlots: candidate.componentSlots ?? [],
     surface: surfaces[0] ?? null,
@@ -1220,6 +1236,7 @@ function serializeRun({
   profile,
   result,
   startedAt,
+  currentLocation = null,
   finishedAt = new Date().toISOString(),
 }) {
   const ranked = rankedCandidateObjects(result.state.candidates, result.rankedCandidates);
@@ -1265,8 +1282,14 @@ function serializeRun({
         ? { status: 'requested' }
         : { status: 'not_requested', reason: 'No travel origin was present in the request.' },
     },
-    candidates: diversified.map(serializeCandidate),
-    verifiedAvailability: diversified.map(serializeCandidate),
+    candidates: diversified.map((entry, index) => serializeCandidate(entry, index, {
+      currentLocation,
+      searchScope: result.state.searchScope,
+    })),
+    verifiedAvailability: diversified.map((entry, index) => serializeCandidate(entry, index, {
+      currentLocation,
+      searchScope: result.state.searchScope,
+    })),
     nearbyCourts,
     replanning: result.iterations.map((iteration) => ({
       iteration: iteration.iteration,
@@ -1435,7 +1458,7 @@ async function recommendCourts({
       maxIterations: selectedMaxIterations,
       minCandidates,
     });
-    return serializeRun({ request, profile: runtimeProfile, result, startedAt });
+    return serializeRun({ request, profile: runtimeProfile, result, startedAt, currentLocation });
   } catch (error) {
     return {
       ok: false,

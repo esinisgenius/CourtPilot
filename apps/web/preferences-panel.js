@@ -39,8 +39,11 @@ const editProfileButtons = [
 const searchAgainButton = document.querySelector('#search-again');
 const profileStorageKey = 'findmycourt.profile.v1';
 const behaviorStorageKey = 'findmycourt.behavior.v1';
+const analyticsStorageKey = 'findmycourt.analytics.v1';
 const behaviorStorageVersion = 1;
+const analyticsStorageVersion = 1;
 const maxBehaviorItems = 20;
+const maxAnalyticsEvents = 120;
 const demoServerOrigin = 'http://127.0.0.1:4174';
 const loadingMessages = [
   'Understanding your preferences...',
@@ -48,6 +51,7 @@ const loadingMessages = [
   'Comparing available options...',
 ];
 let loadingMessageTimer = null;
+let currentLocationPromise = null;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -195,9 +199,47 @@ function appendBehavior(listName, item) {
   });
 }
 
+function loadAnalyticsEvents() {
+  const storage = safeStorage();
+  if (!storage) return [];
+  const envelope = safeJsonParse(storage.getItem(analyticsStorageKey));
+  if (envelope?.storageVersion !== analyticsStorageVersion) return [];
+  return Array.isArray(envelope.events) ? envelope.events.slice(0, maxAnalyticsEvents) : [];
+}
+
+function saveAnalyticsEvents(events) {
+  const storage = safeStorage();
+  const normalized = events
+    .filter((event) => event && typeof event === 'object' && !Array.isArray(event))
+    .slice(0, maxAnalyticsEvents);
+  if (storage) {
+    storage.setItem(analyticsStorageKey, JSON.stringify({
+      storageVersion: analyticsStorageVersion,
+      events: normalized,
+    }));
+  }
+  return normalized;
+}
+
+function trackEvent(type, properties = {}) {
+  const event = {
+    type,
+    timestamp: new Date().toISOString(),
+    path: window.location.pathname,
+    ...properties,
+  };
+  saveAnalyticsEvents([event, ...loadAnalyticsEvents()]);
+  return event;
+}
+
 function clearBehaviorHistory() {
   const storage = safeStorage();
   if (storage) storage.removeItem(behaviorStorageKey);
+}
+
+function clearAnalyticsEvents() {
+  const storage = safeStorage();
+  if (storage) storage.removeItem(analyticsStorageKey);
 }
 
 function localTimeFromStartTime(startTime) {
@@ -280,6 +322,40 @@ function selectedValues(groupName) {
     .filter(Boolean);
 }
 
+function customCourtValue() {
+  return document.querySelector('#custom-court-input')?.value.trim().replace(/\s+/g, ' ') ?? '';
+}
+
+function revealCustomCourtInput() {
+  const row = document.querySelector('#custom-court-row');
+  row?.classList.add('is-visible');
+  row?.setAttribute('aria-hidden', 'false');
+  document.querySelector('#custom-court-input')?.focus();
+  trackEvent('custom_court_input_opened');
+}
+
+function addCustomCourtChoice() {
+  const value = customCourtValue();
+  if (!value) return;
+  const group = document.querySelector('[data-choice-group="venues"]');
+  const existing = [...group.querySelectorAll('.choice')]
+    .find((button) => button.dataset.value?.toLowerCase() === value.toLowerCase());
+  if (existing) {
+    existing.classList.add('is-selected');
+  } else {
+    const addButton = group.querySelector('[data-add-court="true"]');
+    const button = document.createElement('button');
+    button.className = 'choice is-selected';
+    button.type = 'button';
+    button.dataset.value = value;
+    button.dataset.customCourt = 'true';
+    button.textContent = value;
+    group.insertBefore(button, addButton);
+  }
+  document.querySelector('#custom-court-input').value = '';
+  trackEvent('custom_court_added', { labelLength: value.length });
+}
+
 function buildOnboardingProfile() {
   const start = document.querySelector('#profile-start-time').value || '18:00';
   const end = document.querySelector('#profile-end-time').value || '20:00';
@@ -311,7 +387,7 @@ function formatTimeForChip(value) {
 function describeProfileChipsFromUserProfile(userProfile) {
   if (!userProfile) return [];
   const chips = [];
-  if (userProfile.preferredVenues?.length) chips.push(...userProfile.preferredVenues.slice(0, 3));
+  if (userProfile.preferredVenues?.length) chips.push(...userProfile.preferredVenues.slice(0, 5));
   if (userProfile.preferredDays?.length) chips.push(userProfile.preferredDays.slice(0, 4).join(', '));
   for (const window of userProfile.preferredTimeWindows ?? []) {
     if (window.start && window.end) {
@@ -484,7 +560,18 @@ function formatWeatherValue(weather) {
 
 function formatDistance(distanceKm) {
   if (!Number.isFinite(distanceKm)) return null;
-  return `${distanceKm.toFixed(distanceKm < 10 ? 1 : 0)} km away`;
+  return `${distanceKm.toFixed(distanceKm < 10 ? 1 : 0)} km`;
+}
+
+function formatCandidateDistances(candidate) {
+  const currentDistance = formatDistance(
+    candidate.currentLocationDistanceKm ?? candidate.distanceKm,
+  );
+  const targetDistance = formatDistance(candidate.targetLocationDistanceKm);
+  return [
+    currentDistance ? `From current location ${currentDistance}` : null,
+    targetDistance ? `From target location ${targetDistance}` : null,
+  ].filter(Boolean).join(' · ') || null;
 }
 
 function formatTimeRange(candidate) {
@@ -579,7 +666,7 @@ function renderBookingAction(booking, candidate = null, context = 'candidate') {
 function renderCandidateCard(candidate, isBest = false) {
   const details = [
     candidate.court,
-    formatDistance(candidate.distanceKm ?? candidate.travel?.distanceKm),
+    formatCandidateDistances(candidate),
     formatTimeRange(candidate),
   ].filter(Boolean);
   const price = formatPriceValue(candidate.price);
@@ -705,9 +792,60 @@ function friendlyFetchError(error) {
   return error.message;
 }
 
+function canRequestBrowserLocation() {
+  return Boolean(window.navigator?.geolocation);
+}
+
+function browserLocationError(error) {
+  if (!error) return 'unknown';
+  if (error.code === error.PERMISSION_DENIED) return 'permission_denied';
+  if (error.code === error.POSITION_UNAVAILABLE) return 'position_unavailable';
+  if (error.code === error.TIMEOUT) return 'timeout';
+  return error.message ?? 'unknown';
+}
+
+async function getCurrentLocation({ timeoutMs = 4500 } = {}) {
+  if (!canRequestBrowserLocation()) {
+    trackEvent('geolocation_unavailable', { reason: 'unsupported' });
+    return null;
+  }
+  if (currentLocationPromise) return currentLocationPromise;
+  currentLocationPromise = new Promise((resolve) => {
+    window.navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const currentLocation = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          label: 'Current location',
+          accuracyMeters: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null,
+        };
+        trackEvent('geolocation_success', {
+          accuracyMeters: currentLocation.accuracyMeters,
+        });
+        resolve(currentLocation);
+      },
+      (error) => {
+        trackEvent('geolocation_failed', {
+          reason: browserLocationError(error),
+        });
+        resolve(null);
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: timeoutMs,
+        maximumAge: 10 * 60 * 1000,
+      },
+    );
+  }).finally(() => {
+    currentLocationPromise = null;
+  });
+  return currentLocationPromise;
+}
+
 async function fetchRecommendation(text) {
   const userProfile = loadUserProfile();
   const recentBehavior = summarizeBehaviorHistory();
+  const currentLocation = await getCurrentLocation();
   const response = await fetch(recommendApiUrl(), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -715,6 +853,7 @@ async function fetchRecommendation(text) {
       request: text,
       userProfile,
       recentBehavior,
+      currentLocation,
     }),
   });
   const payload = await response.json();
@@ -753,6 +892,10 @@ async function submitRequest() {
   whyCard.classList.remove('is-visible');
   startLoadingState();
   showScreen('loading');
+  trackEvent('recommendation_submitted', {
+    requestLength: text.length,
+    hasProfile: Boolean(loadUserProfile()),
+  });
 
   try {
     const response = await fetchRecommendation(text);
@@ -768,6 +911,13 @@ async function submitRequest() {
     renderRunState(response);
     renderCandidates(response);
     renderNearbyCourts(response);
+    trackEvent('recommendation_completed', {
+      status: response.status ?? null,
+      ok: response.ok === true,
+      candidateCount: (response.candidates ?? response.recommendations ?? []).length,
+      nearbyCount: (response.nearbyCourts ?? response.nearbyVenues ?? []).length,
+      locationSource: response.searchScope?.locationSource ?? null,
+    });
     showScreen('results');
   } catch (error) {
     const message = friendlyFetchError(error);
@@ -785,6 +935,9 @@ async function submitRequest() {
       nearbyCourts: [],
     });
     renderNearbyCourts({ nearbyCourts: [] });
+    trackEvent('recommendation_failed', {
+      message,
+    });
     showScreen('results');
   } finally {
     stopLoadingState();
@@ -804,8 +957,17 @@ function handleSearchAgain() {
 function completeOnboarding(skipped = false) {
   if (skipped) {
     saveUserProfile(null, { skippedOnboarding: true });
+    trackEvent('onboarding_skipped');
   } else {
-    saveUserProfile(buildOnboardingProfile());
+    const userProfile = buildOnboardingProfile();
+    saveUserProfile(userProfile);
+    trackEvent('onboarding_saved', {
+      venueCount: userProfile.preferredVenues.length,
+      dayCount: userProfile.preferredDays.length,
+      hasTimeWindow: userProfile.preferredTimeWindows.length > 0,
+      durationMinutes: userProfile.typicalDurationMinutes,
+      maxTravelMinutes: userProfile.maxTravelMinutes,
+    });
   }
   renderStoredProfile();
   showScreen('search');
@@ -815,11 +977,28 @@ document.querySelectorAll('.choice-row').forEach((group) => {
   group.addEventListener('click', (event) => {
     const button = event.target.closest('.choice');
     if (!button) return;
+    if (button.dataset.addCourt === 'true') {
+      revealCustomCourtInput();
+      return;
+    }
     if (group.dataset.singleChoice === 'true') {
       group.querySelectorAll('.choice').forEach((item) => item.classList.remove('is-selected'));
     }
     button.classList.toggle('is-selected');
+    trackEvent('preference_choice_toggled', {
+      group: group.dataset.choiceGroup ?? null,
+      value: button.dataset.value ?? null,
+      selected: button.classList.contains('is-selected'),
+    });
   });
+});
+
+document.querySelector('#save-custom-court')?.addEventListener('click', addCustomCourtChoice);
+
+document.querySelector('#custom-court-input')?.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  addCustomCourtChoice();
 });
 
 requestInput.addEventListener('input', () => {
@@ -872,10 +1051,18 @@ document.addEventListener('click', (event) => {
     durationMinutes: Number(link.dataset.durationMinutes) || null,
     bookingProvider: link.dataset.bookingProvider || null,
   });
+  trackEvent('booking_link_clicked', {
+    venue: link.dataset.venue || null,
+    court: link.dataset.court || null,
+    bookingProvider: link.dataset.bookingProvider || null,
+    hasStartTime: Boolean(link.dataset.startTime),
+  });
 });
 
 window.CourtPilotStorage = {
+  clearAnalyticsEvents,
   clearBehaviorHistory,
+  loadAnalyticsEvents,
   loadBehaviorHistory,
   loadUserProfile,
   summarizeBehaviorHistory,

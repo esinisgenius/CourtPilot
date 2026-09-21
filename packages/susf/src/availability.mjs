@@ -60,6 +60,23 @@ function todayIsoDate() {
   return `${byType.year}-${byType.month}-${byType.day}`;
 }
 
+function buildCourtBookingUrl(bookingUrl, facilityId) {
+  const source = new URL(bookingUrl);
+  const facilityPath = source.pathname.replace(
+    /\/Clients\/BookMe4FacilityList\/List\/?$/i,
+    '/Clients/BookMe4LandingPages/Facility',
+  );
+  if (facilityPath === source.pathname) return null;
+
+  const target = new URL(facilityPath, source.origin);
+  target.searchParams.set('facilityId', facilityId);
+  for (const key of ['widgetId', 'calendarId']) {
+    const value = source.searchParams.get(key);
+    if (value) target.searchParams.set(key, value);
+  }
+  return target.href;
+}
+
 function cloneAvailability(availability) {
   const cloned = availability.map((item) => JSON.parse(JSON.stringify(item)));
   if (availability.discovery) cloned.discovery = JSON.parse(JSON.stringify(availability.discovery));
@@ -466,6 +483,7 @@ function buildRankedCandidates(rows, { durationMinutes }) {
         next_hour_also_available: Boolean(nextHour && availableKeys.has(`${row.court}|${row.date}|${nextHour}`)),
         price_options: row.price_options ?? [],
         officialUrl: row.officialUrl,
+        bookingUrl: row.bookingUrl,
         observedAt: row.observedAt,
       };
     })
@@ -511,6 +529,7 @@ function toPublicAvailability(row) {
     nextHourAlsoAvailable: row.next_hour_also_available,
     sourceMetadata: {
       officialUrl: row.officialUrl,
+      bookingUrl: row.bookingUrl,
     },
   });
 }
@@ -597,6 +616,7 @@ async function readSusfAvailabilityWithCachedMetadata({
         price_options: court.priceOptions ?? [],
         observedAt: new Date().toISOString(),
         officialUrl: cache.bookingUrl,
+        bookingUrl: buildCourtBookingUrl(cache.bookingUrl, court.facilityId),
       })));
   }
 
@@ -752,6 +772,7 @@ async function readSusfAvailability({
           price_options: priceOptions,
           observedAt: new Date().toISOString(),
           officialUrl: normalizedBookingUrl,
+          bookingUrl: buildCourtBookingUrl(normalizedBookingUrl, court.facilityId),
         })));
     }
 
@@ -793,6 +814,7 @@ export {
   DEFAULT_BOOKING_URL,
   DEFAULT_CAPTURE_TIMEOUT_MS,
   SusfAvailabilityError,
+  buildCourtBookingUrl,
   buildRankedCandidates,
   defaultSearchHeadlessMode,
   discoverTennisCourtsFromFacilities,

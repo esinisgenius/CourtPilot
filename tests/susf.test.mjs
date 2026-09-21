@@ -6,6 +6,7 @@ import {
   validateCanonicalAvailability,
 } from '../packages/core/src/index.mjs';
 import {
+  buildCourtBookingUrl,
   buildRankedCandidates,
   defaultSearchHeadlessMode,
   discoverTennisCourtsFromFacilities,
@@ -16,6 +17,18 @@ import {
   prepareAvailabilityRequest,
   toPublicAvailability,
 } from '../packages/susf/src/index.mjs';
+
+test('builds a stable provider court page from the configured SUSF booking URL', () => {
+  const url = buildCourtBookingUrl(
+    'https://susf.perfectmind.com/39161/Clients/BookMe4FacilityList/List?calendarId=calendar-fixture&widgetId=widget-fixture&embed=False',
+    'facility-4',
+  );
+
+  assert.equal(
+    url,
+    'https://susf.perfectmind.com/39161/Clients/BookMe4LandingPages/Facility?facilityId=facility-4&widgetId=widget-fixture&calendarId=calendar-fixture',
+  );
+});
 
 test('dynamically discovers multiple Tennis Courts', () => {
   const courts = discoverTennisCourtsFromFacilities([
@@ -332,6 +345,7 @@ test('SUSF legacy compatibility fields are derived from canonical', () => {
 });
 
 test('candidate builder uses canonical facts when legacy fields drift', () => {
+  const bookingUrl = 'https://susf.perfectmind.com/39161/Clients/BookMe4LandingPages/Facility?facilityId=facility-4&widgetId=widget-fixture&calendarId=calendar-fixture';
   const slot = toPublicAvailability({
     court: 'Court 4',
     facilityId: 'facility-4',
@@ -342,6 +356,7 @@ test('candidate builder uses canonical facts when legacy fields drift', () => {
     price_options: [{ name: 'Tennis Off-Peak Fee', amount: 29, currency: 'AUD', durationMinutes: 60 }],
     observedAt: '2026-09-04T00:00:00.000Z',
     officialUrl: 'https://susf.perfectmind.com/39161/Clients/BookMe4FacilityList/List?calendarId=fixture',
+    bookingUrl,
   });
 
   const candidate = buildCandidate({
@@ -359,7 +374,7 @@ test('candidate builder uses canonical facts when legacy fields drift', () => {
   assert.equal(candidate.features.price, 29);
   assert.equal(candidate.source.availability.availabilityMethod, 'direct');
   assert.deepEqual(candidate.booking, {
-    url: 'https://susf.perfectmind.com/39161/Clients/BookMe4FacilityList/List?calendarId=fixture',
+    url: bookingUrl,
     capability: 'booking_page',
     provider: 'susf',
   });

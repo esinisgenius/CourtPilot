@@ -451,6 +451,11 @@
         gap: 8px;
       }
 
+      .choice-row.is-balanced .choice {
+        min-width: 74px;
+        text-align: center;
+      }
+
       .choice {
         min-height: 31px;
         border: 1px solid var(--line);
@@ -469,11 +474,40 @@
         background: var(--chip);
       }
 
+      .custom-court-row {
+        display: none;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+      }
+
+      .custom-court-row.is-visible {
+        display: grid;
+      }
+
+      .custom-court-row input {
+        min-height: 38px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0 13px;
+        color: var(--ink);
+        background: var(--card);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .custom-court-row button {
+        min-height: 38px;
+        padding: 0 13px;
+        font-size: 12px;
+      }
+
       .time-range {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        grid-template-columns: minmax(92px, 118px) auto minmax(92px, 118px);
         align-items: center;
         gap: 10px;
+        width: fit-content;
+        max-width: 100%;
         min-height: 42px;
         border: 1px solid var(--line);
         border-radius: 18px;
@@ -966,7 +1000,15 @@
             <div class="choice-row" data-choice-group="venues">
               <button class="choice is-selected" type="button" data-value="USYD">USYD</button>
               <button class="choice" type="button" data-value="Moore Park">Moore Park</button>
-              <button class="choice" type="button" data-value="Sydney CBD">+ Add court</button>
+              <button class="choice" type="button" data-value="Prince Alfred Park">Prince Alfred Park</button>
+              <button class="choice" type="button" data-value="Strathfield">Strathfield</button>
+              <button class="choice" type="button" data-value="Burwood">Burwood</button>
+              <button class="choice" type="button" data-value="North Sydney">North Sydney</button>
+              <button id="add-court-button" class="choice" type="button" data-add-court="true">+ Add court</button>
+            </div>
+            <div id="custom-court-row" class="custom-court-row" aria-hidden="true">
+              <input id="custom-court-input" type="text" maxlength="60" placeholder="Court or suburb name" aria-label="Add a court or suburb">
+              <button id="save-custom-court" class="choice" type="button">Add</button>
             </div>
           </section>
 
@@ -994,19 +1036,24 @@
 
           <section class="preference-group">
             <h2>Usual session length</h2>
-            <div class="choice-row" data-choice-group="duration" data-single-choice="true">
+            <div class="choice-row is-balanced" data-choice-group="duration" data-single-choice="true">
+              <button class="choice" type="button" data-value="45">45 min</button>
               <button class="choice" type="button" data-value="60">1 hour</button>
               <button class="choice is-selected" type="button" data-value="90">1.5 hours</button>
               <button class="choice" type="button" data-value="120">2 hours</button>
+              <button class="choice" type="button" data-value="180">3 hours</button>
             </div>
           </section>
 
           <section class="preference-group">
             <h2>Maximum travel time</h2>
-            <div class="choice-row" data-choice-group="travel" data-single-choice="true">
+            <div class="choice-row is-balanced" data-choice-group="travel" data-single-choice="true">
+              <button class="choice" type="button" data-value="10">10 min</button>
               <button class="choice is-selected" type="button" data-value="20">20 min</button>
+              <button class="choice" type="button" data-value="30">30 min</button>
               <button class="choice" type="button" data-value="35">35 min</button>
               <button class="choice" type="button" data-value="50">50 min</button>
+              <button class="choice" type="button" data-value="75">75 min</button>
             </div>
           </section>
 
