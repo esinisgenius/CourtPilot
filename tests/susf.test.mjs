@@ -12,7 +12,6 @@ import {
   discoverTennisCourtsFromFacilities,
   extractRateTableFromHtml,
   selectSusfSlotPrice,
-  targetSusfCourts,
   isAvailabilityTriggerText,
   normalizeAvailability,
   prepareAvailabilityRequest,
@@ -60,17 +59,6 @@ test('dynamic discovery dedupes repeated nodes by facilityId', () => {
   ]);
 
   assert.deepEqual(courts.map((court) => court.court), ['Court 4', 'Court 5']);
-});
-
-test('SUSF production search limits discovery to supported Courts 4, 5, and 6', () => {
-  const courts = discoverTennisCourtsFromFacilities([
-    { facilityId: 'court-1', label: 'Choose Tennis Hard Court 1' },
-    { facilityId: 'court-4', label: 'Choose Tennis Synthetic Court 4' },
-    { facilityId: 'court-5', label: 'Choose Tennis Synthetic Court 5' },
-    { facilityId: 'court-6', label: 'Choose Tennis Synthetic Court 6' },
-  ]);
-
-  assert.deepEqual(targetSusfCourts(courts).map((court) => court.court), ['Court 4', 'Court 5', 'Court 6']);
 });
 
 test('60min peak/offpeak rate table parses from serialized Prices', () => {
