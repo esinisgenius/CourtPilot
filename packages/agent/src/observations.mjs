@@ -25,9 +25,15 @@ const SNAPSHOT_PROVIDER_FETCHERS = Object.freeze(Object.fromEntries(
 ));
 
 function runtimeProviderFetchers() {
-  return process.env.AVAILABILITY_SNAPSHOT_ONLY === '1'
-    ? SNAPSHOT_PROVIDER_FETCHERS
-    : DEFAULT_PROVIDER_FETCHERS;
+  if (process.env.AVAILABILITY_SNAPSHOT_ONLY !== '1') return DEFAULT_PROVIDER_FETCHERS;
+  const directProviders = new Set((process.env.AVAILABILITY_DIRECT_PROVIDERS ?? '')
+    .split(',')
+    .map((providerId) => providerId.trim())
+    .filter(Boolean));
+  return Object.freeze(Object.fromEntries(Object.keys(DEFAULT_PROVIDER_FETCHERS).map((providerId) => [
+    providerId,
+    directProviders.has(providerId) ? DEFAULT_PROVIDER_FETCHERS[providerId] : SNAPSHOT_PROVIDER_FETCHERS[providerId],
+  ])));
 }
 
 function mergeCandidates(existingCandidates, newCandidates) {
