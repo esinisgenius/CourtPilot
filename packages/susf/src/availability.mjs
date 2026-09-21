@@ -29,6 +29,7 @@ const DEFAULT_METADATA_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_AVAILABILITY_CACHE_TTL_MS = 10 * 60 * 1000;
 const SUSF_METADATA_CACHE_VERSION = 1;
 const availabilityCache = new Map();
+const inFlightAvailability = new Map();
 const SUSF_CANONICAL_VENUE = Object.freeze({
   id: 'susf-tennis',
   name: 'Sydney Uni Sport Tennis Courts',
@@ -812,8 +813,24 @@ async function readSusfAvailability({
 }
 
 async function getSusfAvailability(options = {}) {
+  const key = JSON.stringify({
+    bookingUrl: options.bookingUrl ?? process.env.SUSF_BOOKING_URL ?? DEFAULT_BOOKING_URL,
+    date: options.date ?? todayIsoDate(),
+    days: Number(options.days ?? 7),
+    durationMinutes: Number(options.durationMinutes ?? 60),
+  });
+  if (inFlightAvailability.has(key)) return inFlightAvailability.get(key);
+
+  const request = readSusfAvailability(options)
+    .catch((error) => {
+      if (error instanceof SusfAvailabilityError) throw error;
+      throw new SusfAvailabilityError('SUSF_ADAPTER_ERROR', error.message, { cause: error });
+    })
+    .finally(() => inFlightAvailability.delete(key));
+  inFlightAvailability.set(key, request);
+
   try {
-    return await readSusfAvailability(options);
+    return await request;
   } catch (error) {
     if (error instanceof SusfAvailabilityError) throw error;
     throw new SusfAvailabilityError('SUSF_ADAPTER_ERROR', error.message, { cause: error });
