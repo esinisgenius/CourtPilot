@@ -163,6 +163,23 @@ test('13点前或17点后 maps to OR time window', async () => {
   assert.deepEqual(profile.preferences[0].rule, { before: '13:00', after: '17:00' });
 });
 
+test('Strathfield 最近几天 before-or-after request gets deterministic scope repairs', async () => {
+  const text = 'Strathfield 最近几天，13:00 前或者17:00后都行';
+  const profile = await interpretPreferences(text, {
+    provider: mockProvider(baseProfile()),
+    now: new Date('2026-09-20T02:00:00.000Z'),
+  });
+
+  assert.equal(profile.searchScope.location, 'Strathfield');
+  assert.deepEqual(profile.searchScope.dateRange, {
+    type: 'next_few_days',
+    sourceText: '最近几天',
+  });
+  assert.deepEqual(startTimeHardConstraints(profile).map((constraint) => constraint.rule), [
+    { before: '13:00', after: '17:00' },
+  ]);
+});
+
 test('malformed LLM output is rejected by schema', async () => {
   await assert.rejects(
     () => interpretPreferences('想便宜一点', {
@@ -593,6 +610,27 @@ test('generic coastal wording is not preserved as a fake explicit location', () 
   assert.deepEqual(findItem(profile.preferences, 'venue_setting').rule.include, ['coastal']);
 });
 
+test('court surface wording normalizes to canonical surface preferences', () => {
+  const cases = [
+    ['Clay Court', 'clay'],
+    ['Grass Court', 'grass'],
+    ['Hard Court', 'hard'],
+    ['Synthetic Court', 'synthetic'],
+    ['人造草球场', 'synthetic'],
+  ];
+  for (const [sourceText, expected] of cases) {
+    const profile = normalizePreferenceProfile({
+      version: 2,
+      searchScope: { days: 7 },
+      preferences: [],
+      hardConstraints: [],
+      objectives: [],
+      unresolvedPreferences: [],
+    }, { sourceText });
+    assert.deepEqual(findItem(profile.preferences, 'surface').rule.include, [expected]);
+  }
+});
+
 test('source text infers next weekday and USYD location search scope', () => {
   const profile = validatePreferenceProfile(normalizePreferenceProfile(baseProfile({
     searchScope: {
@@ -923,6 +961,28 @@ test('weather sun exposure aliases normalize instead of rejecting the profile', 
   const weather = findItem(profile.preferences, 'weather');
   assert.equal(weather.rule.condition, 'comfortable');
   assert.equal(weather.direction, 'avoid');
+});
+
+test('sun exposure language remains weather and does not restrict covered venues', () => {
+  const profile = validatePreferenceProfile(normalizePreferenceProfile(baseProfile({
+    preferences: [{
+      feature: 'venue_setting', type: 'soft', importance: 'medium', direction: 'preferred',
+      rule: { include: ['covered', 'shade'] }, sourceText: '不要太晒',
+    }],
+  }), { sourceText: 'Burwood，25刀左右，不要太晒' }));
+  assert.equal(profile.preferences.some((item) => item.feature === 'venue_setting'), false);
+  assert.equal(findItem(profile.preferences, 'weather').rule.condition, 'comfortable');
+});
+
+test('explicit indoor court remains a venue setting', () => {
+  const profile = validatePreferenceProfile(normalizePreferenceProfile(baseProfile({
+    preferences: [{
+      feature: 'venue_setting', type: 'soft', importance: 'high', direction: 'preferred',
+      rule: { include: ['indoor'] }, sourceText: '我只想打室内场',
+    }],
+  }), { sourceText: '我只想打室内场' }));
+  assert.equal(findItem(profile.preferences, 'venue_setting').rule.include.includes('indoor'), true);
+  assert.equal(profile.preferences.some((item) => item.feature === 'weather'), false);
 });
 
 test('case_011 regression: no rain hard weather', async () => {

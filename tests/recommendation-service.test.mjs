@@ -1,18 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  applySurfaceScope,
   buildPreferredTemporalPolicy,
   classifyTemporalSpecificity,
   diversifyRankedCandidates,
   inferPersonalizedTemporalPolicy,
   locationProviderRouting,
+  materializeLogicalDurationCandidates,
   providerOptionsForState,
+  recommendCourts,
   searchScopeForProfile,
   searchScopeForProfileContext,
   selectNearbyCourts,
   serializeCandidate,
+  serializeNearbyCourt,
 } from '../packages/agent/src/recommendation-service.mjs';
 import { normalizePreferenceProfile } from '../packages/preferences/src/index.mjs';
+import { applyHardConstraints } from '../packages/core/src/index.mjs';
 
 function rankedEntry({ id, rank, venue, startTime, price = 20 }) {
   return {
@@ -50,6 +55,172 @@ test('explicit Burwood location routes initial provider scope to configured Burw
   assert.equal(routedScope.targetLocation.text, 'burwood附近');
   assert.equal(routedScope.targetLocation.canonicalName, 'Burwood');
   assert.deepEqual(routedScope.targetLocation.center, { lat: -33.8775, lng: 151.1035 });
+});
+
+test('Strathfield before-or-after request routes locally without lossy temporal narrowing', () => {
+  const profile = normalizePreferenceProfile({
+    version: 2,
+    searchWindowDays: 7,
+    searchScope: {},
+    preferences: [],
+    hardConstraints: [],
+    objectives: [],
+    unresolvedPreferences: [],
+  }, {
+    sourceText: 'Strathfield 最近几天，13:00 前或者17:00后都行',
+    updatedAt: '2026-09-20T02:00:00.000Z',
+  });
+  const routedScope = searchScopeForProfile(profile);
+  const options = providerOptionsForState({
+    searchScope: routedScope,
+    preferences: { ...profile, searchScope: routedScope },
+  });
+
+  assert.equal(routedScope.targetLocation.canonicalName, 'Strathfield');
+  assert.equal(routedScope.locationRouting.status, 'matched_geographic_scope');
+  assert.equal(routedScope.locationRouting.matchedVenues.some((venue) => venue.id === 'unified-strathfield-sports-club-tennis'), true);
+  assert.equal(routedScope.providerScope.activeProviderIds.includes('unified-bookings'), true);
+  assert.equal(routedScope.providerScope.activeProviderIds.includes('susf'), false);
+  assert.equal(routedScope.temporalWindow.dateStart, '2026-09-20');
+  assert.equal(routedScope.temporalWindow.dateEnd, '2026-09-22');
+  assert.equal(routedScope.temporalWindow.timeStart, null);
+  assert.equal(routedScope.temporalWindow.timeEnd, null);
+  assert.deepEqual(routedScope.temporalWindow.timeWindows, [
+    { start: '00:00', end: '13:00' },
+    { start: '17:00', end: '23:59' },
+  ]);
+  assert.equal(Array.isArray(options['unified-bookings']), true);
+  assert.deepEqual(options['unified-bookings'].map((item) => ({
+    timeStart: item.timeStart,
+    timeEnd: item.timeEnd,
+  })), [
+    { timeStart: undefined, timeEnd: '13:00' },
+    { timeStart: '17:00', timeEnd: undefined },
+  ]);
+  assert.equal(options['unified-bookings'].some((item) => item.timeStart === '17:00' && item.timeEnd === '13:00'), false);
+
+  const candidates = ['12:30', '14:00', '17:00'].map((time, index) => ({
+    id: `or-${index}`,
+    venue: 'Strathfield Sports Club Tennis',
+    court: 'Court 1',
+    startTime: `2026-09-21T${time}:00+10:00`,
+    durationMinutes: 60,
+    features: { localDate: '2026-09-21', localTime: time },
+  }));
+  const filtered = applyHardConstraints({ candidates, preferenceProfile: { ...profile, searchScope: routedScope } });
+  assert.deepEqual(filtered.accepted.map((item) => item.features.localTime), ['12:30', '17:00']);
+  assert.deepEqual(filtered.rejected.map((item) => item.candidate.features.localTime), ['14:00']);
+});
+
+test('next Monday remains an exact date through hard filtering', () => {
+  const profile = normalizePreferenceProfile({
+    version: 2,
+    searchScope: { dateRange: { type: 'next_week', sourceText: '下周一' } },
+    preferences: [],
+    hardConstraints: [{
+      feature: 'date', type: 'hard', importance: 'high', relaxable: false,
+      rule: { dateRange: { type: 'next_week', sourceText: '下周一' } }, sourceText: '下周一',
+    }],
+    objectives: [], unresolvedPreferences: [],
+  }, { sourceText: '下周一早上想在悉大附近打两个小时', updatedAt: '2026-09-20T02:00:00.000Z' });
+  const scope = searchScopeForProfile(profile, { now: new Date('2026-09-20T02:00:00.000Z') });
+  assert.equal(profile.searchScope.dateRange.type, 'specific_date');
+  assert.equal(scope.temporalWindow.dateStart, '2026-09-21');
+  assert.equal(scope.temporalWindow.dateEnd, '2026-09-21');
+  const candidates = ['2026-09-22', '2026-09-21'].map((date) => ({
+    id: date, venue: 'SUSF', court: 'Court 4', startTime: `${date}T10:00:00+10:00`, durationMinutes: 60,
+    features: { localDate: date, localTime: '10:00', weekday: date === '2026-09-21' ? 'Mon' : 'Tue' },
+  }));
+  const filtered = applyHardConstraints({ candidates, preferenceProfile: { ...profile, searchScope: scope } });
+  assert.deepEqual(filtered.accepted.map((item) => item.id), ['2026-09-21']);
+});
+
+test('two adjacent 60-minute slots become a 120-minute final recommendation', async () => {
+  const base = ['10:00', '11:00'].map((time, index) => ({
+    id: `slot-${index}`,
+    venue: 'SUSF',
+    court: 'Court 4',
+    startTime: `2026-09-21T${time}:00+10:00`,
+    durationMinutes: 60,
+    features: { localDate: '2026-09-21', localTime: time, nextHourFree: index === 0, price: 20 },
+    source: { provider: 'susf' },
+  }));
+  const profile = normalizePreferenceProfile({
+    version: 2, searchScope: { dateRange: { type: 'tomorrow', sourceText: '明天' } }, preferences: [],
+    hardConstraints: [{ feature: 'consecutive_availability', type: 'hard', importance: 'high', relaxable: false, rule: { minMinutes: 120 }, sourceText: '打两个小时' }],
+    objectives: [], unresolvedPreferences: [],
+  }, { sourceText: '明天打两个小时', updatedAt: '2026-09-20T02:00:00.000Z' });
+  const logical = materializeLogicalDurationCandidates(base, profile);
+  assert.equal(logical.length, 1);
+  assert.equal(logical[0].durationMinutes, 120);
+  assert.deepEqual(logical[0].componentSlots.map((item) => item.id), ['slot-0', 'slot-1']);
+
+  const result = await recommendCourts({
+    request: '明天打两个小时',
+    now: new Date('2026-09-20T02:00:00.000Z'),
+    preferenceProvider: { async interpret() { return profile; } },
+    replannerMode: 'heuristic',
+    observeCandidates: async () => ({ candidates: base }),
+    maxIterations: 1,
+  });
+  assert.equal(result.candidates[0].durationMinutes, 120);
+  assert.equal(result.candidates[0].endTime, '2026-09-21T02:00:00.000Z');
+  assert.equal(result.candidates[0].componentSlots.length, 2);
+});
+
+test('recommendation service preserves the LLM-selected slate order', async () => {
+  const profile = normalizePreferenceProfile({
+    version: 2,
+    searchScope: { days: 2 },
+    preferences: [],
+    hardConstraints: [],
+    objectives: [],
+    unresolvedPreferences: [],
+  }, { sourceText: '明天早上想在悉大或者city打球', updatedAt: '2026-09-20T02:00:00.000Z' });
+  const candidates = [
+    { id: 'usyd-1000', venue: 'USYD', court: 'Court 4', startTime: '2026-09-21T10:00:00+10:00' },
+    { id: 'usyd-1015', venue: 'USYD', court: 'Court 4', startTime: '2026-09-21T10:15:00+10:00' },
+    { id: 'city-1000', venue: 'City', court: 'Court 1', startTime: '2026-09-21T10:00:00+10:00' },
+    { id: 'usyd-0800', venue: 'USYD', court: 'Court 1', startTime: '2026-09-21T08:00:00+10:00' },
+  ].map((item) => ({
+    ...item,
+    durationMinutes: 60,
+    features: {
+      localDate: '2026-09-21',
+      localTime: item.startTime.slice(11, 16),
+      nextHourFree: false,
+      price: null,
+    },
+    source: { provider: 'fixture', availability: { status: 'verified', source: 'fixture' } },
+  }));
+
+  const result = await recommendCourts({
+    request: '明天早上想在悉大或者city打球',
+    now: new Date('2026-09-20T02:00:00.000Z'),
+    preferenceProvider: { async interpret() { return profile; } },
+    replannerMode: 'heuristic',
+    rankerProvider: ({ input }) => ({
+      rankedCandidates: ['usyd-1000', 'city-1000', 'usyd-0800', 'usyd-1015'].map((candidateId, index) => ({
+        candidateId,
+        rank: index + 1,
+        reasons: ['Feasible preference match.'],
+        tradeoffs: ['No known price fact.'],
+        marginalValue: index === 0
+          ? 'Strongest overall match.'
+          : 'Adds a meaningfully different choice to the slate.',
+      })),
+    }),
+    observeCandidates: async () => ({ candidates }),
+    maxIterations: 1,
+  });
+
+  assert.equal(result.summary.rankingMode, 'llm_slate');
+  assert.deepEqual(result.candidates.slice(0, 3).map((item) => item.id), [
+    'usyd-1000',
+    'city-1000',
+    'usyd-0800',
+  ]);
+  assert.match(result.candidates[1].marginalValue, /different choice/);
 });
 
 test('explicit CBD provider options never fall back to all Bookable venues', () => {
@@ -461,6 +632,117 @@ test('scenic semantic preference returns tagged static venues as nearby courts w
     assert.equal(venue.startTime, null);
     assert.equal(venue.price, null);
   }
+});
+
+test('surface semantic preference narrows realtime recall to matching venue metadata', () => {
+  const profile = normalizePreferenceProfile({
+    version: 2,
+    searchScope: { days: 7 },
+    preferences: [],
+    hardConstraints: [],
+    objectives: [],
+    unresolvedPreferences: [],
+  }, { sourceText: 'Find me a Hard Court' });
+  const routedScope = searchScopeForProfile(profile);
+  const matchedNames = routedScope.locationRouting.matchedVenues.map((venue) => venue.name);
+
+  assert.deepEqual(routedScope.surfaces, ['hard']);
+  assert.equal(matchedNames.includes('Pinecourt Tennis Club'), true);
+  assert.equal(matchedNames.includes('Kiama Blowhole Tennis Club'), false);
+  assert.equal(matchedNames.includes('Burwood Tennis Courts'), true);
+});
+
+test('serialized cards show only a selected court surface or a single known venue surface', () => {
+  const serialized = serializeCandidate({
+    ranking: { candidateId: 'pinecourt-slot', rank: 1, reasons: [], tradeoffs: [] },
+    candidate: {
+      id: 'pinecourt-slot',
+      venue: 'Pinecourt Tennis Club',
+      court: 'Court 1',
+      startTime: '2026-09-20T10:00:00+10:00',
+      durationMinutes: 60,
+      booking: { url: null, capability: null, provider: 'clubspark' },
+      features: { localDate: '2026-09-20', localTime: '10:00', price: 20 },
+      source: {
+        provider: 'clubspark',
+        availability: { source: 'live' },
+        canonicalAvailability: {
+          venue: { id: 'clubspark-pinecourt-tennis-club' },
+          court: { surface: null },
+          price: { currency: 'AUD' },
+          provenance: { source: 'live' },
+        },
+      },
+    },
+  });
+  assert.deepEqual(serialized.surfaces, ['hard']);
+  assert.equal(serialized.surface, 'hard');
+
+  const meadowbank = serializeCandidate({
+    ranking: { candidateId: 'meadowbank-clay-slot', rank: 1, reasons: [], tradeoffs: [] },
+    candidate: {
+      id: 'meadowbank-clay-slot',
+      venue: 'Meadowbank Park Tennis Centre',
+      court: 'Court 3 (Clay Court)',
+      startTime: '2026-09-20T10:00:00+10:00',
+      durationMinutes: 60,
+      booking: {
+        url: 'https://www.tennisvenues.com.au/booking/meadowbank-park-tc',
+        capability: 'court_date_time_preselected',
+        provider: 'sportlogic',
+      },
+      features: { localDate: '2026-09-20', localTime: '10:00', price: 29 },
+      source: {
+        provider: 'sportlogic',
+        availability: { source: 'live' },
+        canonicalAvailability: {
+          venue: { id: 'sportlogic-meadowbank-park-tennis-centre' },
+          court: { surface: null },
+          price: { currency: 'AUD' },
+          provenance: { source: 'live' },
+        },
+      },
+    },
+  });
+  assert.equal(meadowbank.courtSurface, 'clay');
+  assert.deepEqual(meadowbank.surfaces, ['clay']);
+
+  const mutchPark = serializeNearbyCourt({
+    id: 'static-mutch-park-tennis-centre',
+    name: 'Mutch Park Tennis Centre',
+    suburb: 'Pagewood',
+    area: 'Eastern Suburbs',
+    surfaces: ['synthetic', 'hard'],
+    surface: 'synthetic',
+    courtSurfaces: {},
+    realtimeAvailability: false,
+    verificationStatus: 'verified',
+    booking: { url: null, capability: null },
+  }, 2.3);
+  assert.equal(mutchPark.surface, null);
+  assert.deepEqual(mutchPark.surfaces, []);
+});
+
+test('surface scope keeps Meadowbank clay courts and rejects its synthetic courts', () => {
+  const candidate = (court) => ({
+    id: `meadowbank-${court}`,
+    venue: 'Meadowbank Park Tennis Centre',
+    court,
+    source: {
+      provider: 'sportlogic',
+      canonicalAvailability: {
+        venue: { id: 'sportlogic-meadowbank-park-tennis-centre' },
+        court: { surface: null },
+      },
+    },
+  });
+  const clay = candidate('Court 3 (Clay Court)');
+  const synthetic = candidate('Court 5');
+  const filtered = applySurfaceScope([synthetic, clay], { surfaces: ['clay'] });
+
+  assert.deepEqual(filtered.accepted.map((entry) => entry.id), ['meadowbank-Court 3 (Clay Court)']);
+  assert.equal(filtered.rejected.length, 1);
+  assert.equal(filtered.rejected[0].reasons[0].reason, 'candidate_surface_mismatch');
 });
 
 test('nearby courts exclude realtime availability tier venues and unknown inventory', () => {

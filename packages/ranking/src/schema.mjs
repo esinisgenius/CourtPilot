@@ -10,7 +10,7 @@ const rankerOutputJsonSchema = Object.freeze({
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['candidateId', 'rank', 'reasons', 'tradeoffs'],
+        required: ['candidateId', 'rank', 'reasons', 'tradeoffs', 'marginalValue'],
         properties: {
           candidateId: { type: 'string' },
           rank: { type: 'integer', minimum: 1 },
@@ -22,6 +22,7 @@ const rankerOutputJsonSchema = Object.freeze({
             type: 'array',
             items: { type: 'string' },
           },
+          marginalValue: { type: 'string' },
         },
       },
     },
@@ -122,6 +123,9 @@ function snapshotCandidateFacts(candidate) {
     },
     court: {
       name: candidate.court ?? null,
+      surface: candidate.features?.surface
+        ?? candidate.source?.canonicalAvailability?.court?.surface
+        ?? null,
       preferenceMatch: candidate.features?.courtPreference ?? candidate.matches?.court ?? null,
     },
     venue: {
@@ -138,10 +142,11 @@ function snapshotCandidateFacts(candidate) {
   };
 }
 
-function buildRankerInput({ preferenceProfile = {}, candidates = [] } = {}) {
+function buildRankerInput({ preferenceProfile = {}, candidates = [], slateSize = 3 } = {}) {
   if (!Array.isArray(candidates)) throw new RankerSchemaError('Ranker candidates must be an array');
   return {
     preferenceProfile,
+    slateSize: Math.min(Math.max(1, Math.trunc(slateSize)), candidates.length || 1),
     candidates: candidates.map(snapshotCandidateFacts),
   };
 }
@@ -250,7 +255,9 @@ function validateRankerOutput(output, { candidateFacts = [], preferenceProfile =
       continue;
     }
 
-    const extraKeys = Object.keys(entry).filter((key) => !['candidateId', 'rank', 'reasons', 'tradeoffs'].includes(key));
+    const extraKeys = Object.keys(entry).filter((key) => (
+      !['candidateId', 'rank', 'reasons', 'tradeoffs', 'marginalValue'].includes(key)
+    ));
     if (extraKeys.length > 0) issues.push(`${path} has unsupported keys: ${extraKeys.join(', ')}`);
     if (typeof entry.candidateId !== 'string' || !candidateById.has(entry.candidateId)) {
       issues.push(`${path}.candidateId is not in the hard-filtered candidate set`);
@@ -270,11 +277,15 @@ function validateRankerOutput(output, { candidateFacts = [], preferenceProfile =
 
     const reasons = validateStringList(entry.reasons, `${path}.reasons`, issues);
     const tradeoffs = validateStringList(entry.tradeoffs, `${path}.tradeoffs`, issues);
+    if (typeof entry.marginalValue !== 'string' || entry.marginalValue.trim().length === 0) {
+      issues.push(`${path}.marginalValue must be a non-empty string`);
+    }
     const snapshot = candidateById.get(entry.candidateId);
     if (snapshot) {
-      [...reasons, ...tradeoffs].forEach((text, textIndex) => {
-        validateGroundedText(text, snapshot, preferenceProfile, `${path}.text[${textIndex}]`, issues);
-      });
+      [...reasons, ...tradeoffs, entry.marginalValue].filter((text) => typeof text === 'string')
+        .forEach((text, textIndex) => {
+          validateGroundedText(text, snapshot, preferenceProfile, `${path}.text[${textIndex}]`, issues);
+        });
     }
   }
 
@@ -291,6 +302,7 @@ function validateRankerOutput(output, { candidateFacts = [], preferenceProfile =
         rank: entry.rank,
         reasons: entry.reasons,
         tradeoffs: entry.tradeoffs,
+        marginalValue: entry.marginalValue,
       }))
       .sort((a, b) => a.rank - b.rank),
   };

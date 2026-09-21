@@ -82,8 +82,8 @@ function nextWeekdayDate(targetWeekday, today, { nextWeek = false } = {}) {
   const current = weekdayIndex(today);
   if (current === null || targetWeekday === null || targetWeekday === undefined) return null;
   if (nextWeek) {
-    const monday = addDays(today, 1 - current + (current === 0 ? -6 : 0));
-    return addDays(monday, 7 + targetWeekday - 1);
+    const currentWeekMonday = addDays(today, -((current + 6) % 7));
+    return addDays(currentWeekMonday, 7 + targetWeekday - 1);
   }
   const delta = (targetWeekday - current + 7) % 7;
   return addDays(today, delta);
@@ -251,6 +251,7 @@ function normalizeHour(hour, meridiem) {
 
 function inferTimeWindowFromText(text = '') {
   const normalized = String(text).toLowerCase();
+  if (hasDisjointBeforeAfterWindow(normalized)) return null;
   const after = normalized.match(/(?:after|以后|之后|点后)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?|(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(?:点)?\s*(?:以后|之后|点后)/);
   if (after) {
     const hour = after[1] ?? after[4];
@@ -271,15 +272,35 @@ function inferTimeWindowFromText(text = '') {
   return null;
 }
 
+function hasDisjointBeforeAfterWindow(text = '') {
+  const beforeMatch = String(text).match(/(\d{1,2})(?::([0-5]\d))?\s*(?:点)?\s*(?:前|以前|之前)/);
+  const afterMatch = String(text).match(/(\d{1,2})(?::([0-5]\d))?\s*(?:点)?\s*(?:后|以后|之后)/);
+  if (!beforeMatch || !afterMatch) return false;
+  const connector = String(text).slice(beforeMatch.index + beforeMatch[0].length, afterMatch.index);
+  return /(?:或者|或|和|、|,|，|\/|\bor\b)/iu.test(connector);
+}
+
 function resolveTimeWindow(timeWindow, { sourceText = '' } = {}) {
   if (timeWindow?.after || timeWindow?.before || timeWindow?.period) {
     const period = PERIOD_WINDOWS[timeWindow.period] ?? {};
+    if (timeWindow.before && timeWindow.after) {
+      return {
+        timeStart: null,
+        timeEnd: null,
+        timeWindows: [
+          { start: '00:00', end: timeWindow.before },
+          { start: timeWindow.after, end: '23:59' },
+        ],
+      };
+    }
     return {
       timeStart: timeWindow.after ?? period.timeStart ?? null,
       timeEnd: timeWindow.before ?? period.timeEnd ?? null,
+      timeWindows: null,
     };
   }
-  return inferTimeWindowFromText(sourceText) ?? { timeStart: null, timeEnd: null };
+  const inferred = inferTimeWindowFromText(sourceText);
+  return inferred ? { ...inferred, timeWindows: null } : { timeStart: null, timeEnd: null, timeWindows: null };
 }
 
 function resolveTemporalWindow({
@@ -298,6 +319,7 @@ function resolveTemporalWindow({
     dateEnd: date.dateEnd,
     timeStart: time.timeStart,
     timeEnd: time.timeEnd,
+    timeWindows: time.timeWindows,
     timezone,
     source: unresolved ? 'unresolved' : date.source === 'unspecified' && !time.timeStart && !time.timeEnd ? 'unspecified' : date.source,
     unresolved,
@@ -314,8 +336,18 @@ function candidateMatchesTemporalWindow(candidate, temporalWindow = {}) {
   const localTime = candidate.features?.localTime ?? getSydneyLocalDateTime(candidate.startTime).localTime;
   if (temporalWindow.dateStart && localDate < temporalWindow.dateStart) return false;
   if (temporalWindow.dateEnd && localDate > temporalWindow.dateEnd) return false;
-  if (temporalWindow.timeStart && timeToMinutes(localTime) < timeToMinutes(temporalWindow.timeStart)) return false;
-  if (temporalWindow.timeEnd && timeToMinutes(localTime) >= timeToMinutes(temporalWindow.timeEnd)) return false;
+  if (Array.isArray(temporalWindow.timeWindows) && temporalWindow.timeWindows.length > 0) {
+    const candidateMinutes = timeToMinutes(localTime);
+    const matches = temporalWindow.timeWindows.some((window) => {
+      const start = window.start ? timeToMinutes(window.start) : 0;
+      const end = window.end ? timeToMinutes(window.end) : 24 * 60;
+      return start <= end && candidateMinutes >= start && candidateMinutes < end;
+    });
+    if (!matches) return false;
+  } else {
+    if (temporalWindow.timeStart && timeToMinutes(localTime) < timeToMinutes(temporalWindow.timeStart)) return false;
+    if (temporalWindow.timeEnd && timeToMinutes(localTime) >= timeToMinutes(temporalWindow.timeEnd)) return false;
+  }
   return true;
 }
 

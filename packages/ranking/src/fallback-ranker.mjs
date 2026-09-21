@@ -382,9 +382,12 @@ function fallbackRankCandidates({ preferenceProfile = {}, candidates = [] } = {}
       rank: index + 1,
       reasons: reasonsForSnapshot(snapshot, signals, preferenceProfile),
       tradeoffs: tradeoffsForSnapshot(snapshot, signals, preferenceProfile),
+      marginalValue: index === 0
+        ? 'Best deterministic fallback match from the supported preference facts.'
+        : 'Additional fallback option ordered by the supported preference facts.',
     }));
 
-  return { rankedCandidates: ranked };
+  return { rankedCandidates: ranked, rankingMode: 'deterministic_fallback' };
 }
 
 export {

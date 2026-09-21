@@ -6,6 +6,7 @@ const REPLANNING_ACTIONS = Object.freeze({
   EXPAND_VENUE_SET: 'EXPAND_VENUE_SET',
   RELAX_PRICE: 'RELAX_PRICE',
   SEARCH_OTHER_VENUES: 'SEARCH_OTHER_VENUES',
+  REINTERPRET_PREFERENCES: 'REINTERPRET_PREFERENCES',
   SWITCH_SEARCH_AREA: 'SWITCH_SEARCH_AREA',
   ASK_USER: 'ASK_USER',
   SATISFACTORY: 'SATISFACTORY',
@@ -18,6 +19,8 @@ const boundedRealReplanningActions = new Set([
   REPLANNING_ACTIONS.SHIFT_TIME_WINDOW,
   REPLANNING_ACTIONS.INCLUDE_NONPREFERRED_COURTS,
   REPLANNING_ACTIONS.EXPAND_VENUE_SET,
+  REPLANNING_ACTIONS.SEARCH_OTHER_VENUES,
+  REPLANNING_ACTIONS.REINTERPRET_PREFERENCES,
   REPLANNING_ACTIONS.SWITCH_SEARCH_AREA,
   REPLANNING_ACTIONS.ASK_USER,
   REPLANNING_ACTIONS.SATISFACTORY,
@@ -64,7 +67,9 @@ function validateReplanningAction(action) {
   if (action.parameters) {
     const allowedParameterKeys = action.selectedAction === REPLANNING_ACTIONS.SWITCH_SEARCH_AREA
       ? ['targetAreaId']
-      : [];
+      : action.selectedAction === REPLANNING_ACTIONS.REINTERPRET_PREFERENCES
+        ? ['patch']
+        : [];
     for (const key of Object.keys(action.parameters)) {
       if (!allowedParameterKeys.includes(key)) issues.push(`parameters.${key} is not allowed`);
     }
@@ -72,7 +77,12 @@ function validateReplanningAction(action) {
       && (typeof action.parameters.targetAreaId !== 'string' || action.parameters.targetAreaId.length === 0)) {
       issues.push('parameters.targetAreaId must be a non-empty string for SWITCH_SEARCH_AREA');
     }
-    if (action.selectedAction !== REPLANNING_ACTIONS.SWITCH_SEARCH_AREA
+    if (action.selectedAction === REPLANNING_ACTIONS.REINTERPRET_PREFERENCES) {
+      if (!action.parameters.patch || typeof action.parameters.patch !== 'object' || Array.isArray(action.parameters.patch)) {
+        issues.push('parameters.patch must be an object for REINTERPRET_PREFERENCES');
+      }
+    }
+    if (![REPLANNING_ACTIONS.SWITCH_SEARCH_AREA, REPLANNING_ACTIONS.REINTERPRET_PREFERENCES].includes(action.selectedAction)
       && Object.keys(action.parameters).length > 0) {
       issues.push('parameters must be empty for this action');
     }
@@ -117,6 +127,9 @@ const replanningActionJsonSchema = {
       properties: {
         targetAreaId: {
           type: 'string',
+        },
+        patch: {
+          type: 'object',
         },
       },
     },

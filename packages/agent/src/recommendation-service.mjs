@@ -1,5 +1,6 @@
 import { runReplanningLoop } from './replanner.mjs';
 import { createOpenAiReplannerProvider } from './llm-replanner.mjs';
+import { createOpenAiRankerProvider } from '../../ranking/src/index.mjs';
 import { createInitialAgentState } from './state.mjs';
 import { observeConfiguredAvailabilityProviders } from './observations.mjs';
 import { normalizeSearchScope } from './search-scope.mjs';
@@ -12,6 +13,7 @@ import {
   applyCandidateEligibilityGate,
   enrichCandidates,
   resolveTemporalWindow,
+  stableCandidateId,
   summarizeCandidates,
   temporalWindowDays,
 } from '../../core/src/index.mjs';
@@ -65,7 +67,10 @@ const configuredVenueCatalog = Object.freeze([
   ...DEFAULT_MINDBODY_VENUES,
   ...DEFAULT_SPORTLOGIC_VENUES,
   ...DEFAULT_UNIFIED_BOOKINGS_VENUES,
-]);
+].map((venue) => {
+  const canonical = canonicalVenueInventory().find((item) => item.id === venue.id);
+  return { ...venue, surfaces: canonical?.surfaces ?? venue.surfaces ?? [] };
+}));
 
 function jsonClone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -112,6 +117,17 @@ function providerOptionsForState(state) {
     ...(temporalWindow?.timeEnd ? { timeEnd: temporalWindow.timeEnd } : {}),
     ...(temporalWindow?.timezone ? { timezone: temporalWindow.timezone } : {}),
   };
+  const optionVariants = Array.isArray(temporalWindow?.timeWindows) && temporalWindow.timeWindows.length > 0
+    ? temporalWindow.timeWindows.map((window) => ({
+        ...baseOptions,
+        ...(window.start && window.start !== '00:00' ? { timeStart: window.start } : {}),
+        ...(window.end && window.end !== '23:59' ? { timeEnd: window.end } : {}),
+      }))
+    : [baseOptions];
+  const withVenues = (venues) => {
+    const variants = optionVariants.map((options) => ({ ...options, venues }));
+    return variants.length === 1 ? variants[0] : variants;
+  };
   demoTemporalTrace('PROVIDER_DATE_RANGE', `${baseOptions.dateStart ?? ''}..${baseOptions.dateEnd ?? ''}`);
   demoTemporalTrace('PROVIDER_TIME_RANGE', `${baseOptions.timeStart ?? ''}..${baseOptions.timeEnd ?? ''}`);
   const availabilityOptions = {};
@@ -121,22 +137,18 @@ function providerOptionsForState(state) {
     && state.searchScope?.locationRouting?.status === 'matched_geographic_scope') {
     const activeProviderIds = state.searchScope?.providerScope?.activeProviderIds ?? [];
     for (const providerId of activeProviderIds) {
-      availabilityOptions[providerId] = {
-        ...baseOptions,
-        venues: matchedByProvider[providerId] ?? [],
-      };
+      availabilityOptions[providerId] = withVenues(matchedByProvider[providerId] ?? []);
     }
     return availabilityOptions;
   }
 
   for (const [providerId, venues] of Object.entries(matchedByProvider)) {
-    availabilityOptions[providerId] = {
-      ...baseOptions,
-      venues,
-    };
+    availabilityOptions[providerId] = withVenues(venues);
   }
 
-  return Object.keys(availabilityOptions).length > 0 ? availabilityOptions : baseOptions;
+  return Object.keys(availabilityOptions).length > 0
+    ? availabilityOptions
+    : optionVariants.length === 1 ? baseOptions : optionVariants;
 }
 
 function accessibilityOptionsForProfile(profile) {
@@ -178,6 +190,107 @@ function enrichDistanceFacts(candidates = [], searchScope = {}) {
   });
 }
 
+function requestedLogicalDuration(profile = {}) {
+  const signals = [...(profile.hardConstraints ?? []), ...(profile.preferences ?? [])]
+    .filter((item) => item.feature === 'duration' || item.feature === 'consecutive_availability');
+  const minutes = signals
+    .map((item) => item.rule?.exactMinutes ?? item.rule?.minMinutes ?? item.rule?.preferredMinutes)
+    .filter(Number.isFinite);
+  return {
+    minutes: minutes.length > 0 ? Math.max(...minutes) : null,
+    hard: signals.some((item) => item.type === 'hard' && Number.isFinite(
+      item.rule?.exactMinutes ?? item.rule?.minMinutes ?? item.rule?.preferredMinutes,
+    )),
+  };
+}
+
+function candidateResourceKey(candidate) {
+  const canonical = candidate.source?.canonicalAvailability;
+  return [
+    candidate.source?.provider,
+    canonical?.venue?.id ?? candidate.venue,
+    canonical?.court?.id ?? candidate.court,
+  ].join('|');
+}
+
+function materializeLogicalDurationCandidates(candidates = [], profile = {}) {
+  const request = requestedLogicalDuration(profile);
+  if (request.minutes !== 120) return candidates;
+
+  const sixtyMinute = candidates.filter((candidate) => candidate.durationMinutes === 60);
+  const byResourceAndStart = new Map(sixtyMinute.map((candidate) => [
+    `${candidateResourceKey(candidate)}|${Date.parse(candidate.startTime)}`,
+    candidate,
+  ]));
+  const logical = [];
+  for (const candidate of sixtyMinute) {
+    const startMs = Date.parse(candidate.startTime);
+    if (!Number.isFinite(startMs)) continue;
+    const next = byResourceAndStart.get(`${candidateResourceKey(candidate)}|${startMs + 60 * 60 * 1000}`);
+    if (!next) continue;
+    logical.push({
+      ...candidate,
+      id: stableCandidateId({
+        provider: candidate.source?.provider,
+        venue: candidate.source?.canonicalAvailability?.venue?.id ?? candidate.venue,
+        court: candidate.source?.canonicalAvailability?.court?.id ?? candidate.court,
+        startTime: candidate.startTime,
+        durationMinutes: 120,
+      }),
+      durationMinutes: 120,
+      componentSlots: [
+        { id: candidate.id, startTime: candidate.startTime, durationMinutes: 60 },
+        { id: next.id, startTime: next.startTime, durationMinutes: 60 },
+      ],
+      features: {
+        ...candidate.features,
+        nextHourFree: true,
+        continuousDurationMinutes: 120,
+      },
+    });
+  }
+
+  const nativeLong = candidates.filter((candidate) => candidate.durationMinutes >= 120);
+  if (request.hard) return [...nativeLong, ...logical];
+  return [...candidates, ...logical];
+}
+
+function candidateSurface(candidate) {
+  const venueId = candidate.source?.canonicalAvailability?.venue?.id;
+  const venue = canonicalVenueInventory().find((item) => item.id === venueId);
+  const providerSurface = canonicalSurfaceType(candidate.source?.canonicalAvailability?.court?.surface);
+  const courtNumber = String(candidate.court ?? '').match(/\b(\d{1,2})\b/)?.[1] ?? null;
+  const mappedSurface = courtNumber ? venue?.courtSurfaces?.[courtNumber] ?? null : null;
+  if (mappedSurface || providerSurface) return mappedSurface ?? providerSurface;
+  return venue?.surfaces?.length === 1 ? venue.surfaces[0] : null;
+}
+
+function applySurfaceScope(candidates = [], searchScope = {}) {
+  const requested = new Set(searchScope.surfaces ?? []);
+  if (requested.size === 0) return { accepted: candidates, rejected: [] };
+
+  const accepted = [];
+  const rejected = [];
+  for (const candidate of candidates) {
+    const surface = candidateSurface(candidate);
+    if (surface && requested.has(surface)) {
+      accepted.push(candidate);
+    } else {
+      rejected.push({
+        candidate,
+        reasons: [{
+          feature: 'surface',
+          reason: surface ? 'candidate_surface_mismatch' : 'candidate_surface_unknown',
+          detail: surface
+            ? `Court surface ${surface} does not match the requested surface.`
+            : 'Court surface is not known precisely enough to match the request.',
+        }],
+      });
+    }
+  }
+  return { accepted, rejected };
+}
+
 async function observeRealCandidates(state, {
   signal = null,
   providerTimeoutMs,
@@ -198,13 +311,15 @@ async function observeRealCandidates(state, {
     candidates: enrichDistanceFacts(enriched, observed.searchScope),
     searchScope: observed.searchScope,
   });
+  const surfaceScope = applySurfaceScope(eligibility.accepted, observed.searchScope);
 
   return {
     ...observed,
-    candidates: eligibility.accepted,
+    candidates: surfaceScope.accepted,
     rejectedCandidates: [
       ...(observed.rejectedCandidates ?? []),
       ...eligibility.rejected,
+      ...surfaceScope.rejected,
     ],
   };
 }
@@ -331,9 +446,13 @@ function locationProviderRouting(searchScope = {}) {
   const hasSettingPreference = requestedSettings.size > 0;
   const settingMatches = (venue) => !hasSettingPreference
     || (venue.settings ?? []).some((setting) => requestedSettings.has(setting));
+  const requestedSurfaces = new Set(searchScope.surfaces ?? []);
+  const hasSurfacePreference = requestedSurfaces.size > 0;
+  const surfaceMatches = (venue) => !hasSurfacePreference
+    || (venue.surfaces ?? []).some((surface) => requestedSurfaces.has(surface));
   const matchedVenues = configuredVenueCatalog.filter((venue) => {
-    if (venue.enabled === false || !settingMatches(venue)) return false;
-    if (searchScope.locationSource === 'sydney_fallback' && hasSettingPreference) return true;
+    if (venue.enabled === false || !settingMatches(venue) || !surfaceMatches(venue)) return false;
+    if (searchScope.locationSource === 'sydney_fallback' && (hasSettingPreference || hasSurfacePreference)) return true;
     return targets.some((candidateTarget) => venueWithinTarget(
       venue,
       candidateTarget,
@@ -591,6 +710,14 @@ function preferredVenueSettings(profile = {}) {
     .filter(Boolean))];
 }
 
+function preferredSurfaces(profile = {}) {
+  return [...new Set((profile.preferences ?? [])
+    .filter((preference) => preference.feature === 'surface' && preference.type !== 'hard')
+    .flatMap((preference) => preference.rule?.include ?? preference.rule?.values ?? [])
+    .map((surface) => String(surface).trim().toLowerCase())
+    .filter(Boolean))];
+}
+
 function scopeWithRouting(baseScope, targetLocation, sourceKind, { now = new Date() } = {}) {
   const temporalWindow = resolveTemporalWindow({
     dateRange: baseScope.dateRange,
@@ -612,11 +739,14 @@ function scopeWithRouting(baseScope, targetLocation, sourceKind, { now = new Dat
   };
   const routing = locationProviderRouting(scoped);
   if (sourceKind === 'sydney_fallback') {
+    const thematicSearch = (scoped.venueSettings?.length ?? 0) > 0 || (scoped.surfaces?.length ?? 0) > 0;
     const scopedProviderIds = scoped.providerScope?.activeProviderIds ?? scoped.providerScope?.initialProviderIds;
     const activeProviderIds = scopedProviderIds?.length
       ? scopedProviderIds
       : routing?.activeProviderIds?.length
         ? deprioritizeSusfForDefaultScope(routing.activeProviderIds)
+        : thematicSearch
+          ? []
         : deprioritizeSusfForDefaultScope([...new Set(configuredVenueCatalog
         .filter((venue) => venue.enabled !== false && venue.provider)
         .map((venue) => venue.provider))]);
@@ -663,9 +793,13 @@ function scopeWithRouting(baseScope, targetLocation, sourceKind, { now = new Dat
 }
 
 function searchScopeForProfile(profile) {
+  const hardTimeRule = (profile.hardConstraints ?? [])
+    .find((constraint) => constraint.feature === 'start_time')?.rule;
   const baseScope = {
     ...jsonClone(profile.searchScope ?? {}),
+    ...(!profile.searchScope?.timeWindow && hardTimeRule ? { timeWindow: jsonClone(hardTimeRule) } : {}),
     venueSettings: preferredVenueSettings(profile),
+    surfaces: preferredSurfaces(profile),
   };
   const source = contextLocationSource(profile);
   const targetLocation = source.kind === 'sydney_fallback'
@@ -675,9 +809,13 @@ function searchScopeForProfile(profile) {
 }
 
 async function searchScopeForProfileContext(profile, options = {}) {
+  const hardTimeRule = (profile.hardConstraints ?? [])
+    .find((constraint) => constraint.feature === 'start_time')?.rule;
   const baseScope = {
     ...jsonClone(profile.searchScope ?? {}),
+    ...(!profile.searchScope?.timeWindow && hardTimeRule ? { timeWindow: jsonClone(hardTimeRule) } : {}),
     venueSettings: preferredVenueSettings(profile),
+    surfaces: preferredSurfaces(profile),
   };
   const source = contextLocationSource(profile, options);
   const targetLocation = source.kind === 'sydney_fallback'
@@ -806,6 +944,18 @@ function serializeCandidate(entry, index = entry.ranking.rank - 1) {
   const weather = candidate.features?.weather ?? null;
   const accessibility = candidate.features?.accessibility ?? candidate.accessibility ?? null;
   const endTime = endTimeFromStart(candidate.startTime, candidate.durationMinutes);
+  const venueId = candidate.source?.canonicalAvailability?.venue?.id;
+  const venueMetadata = canonicalVenueInventory().find((venue) => venue.id === venueId);
+  const courtSurface = candidate.source?.canonicalAvailability?.court?.surface;
+  const courtNumber = String(candidate.court ?? '').match(/\b(\d{1,2})\b/)?.[1] ?? null;
+  const mappedCourtSurface = courtNumber ? venueMetadata?.courtSurfaces?.[courtNumber] ?? null : null;
+  const resolvedCourtSurface = mappedCourtSurface ?? canonicalSurfaceType(courtSurface);
+  const venueSurfaces = venueMetadata?.surfaces ?? [];
+  const surfaces = resolvedCourtSurface
+    ? [resolvedCourtSurface]
+    : venueSurfaces.length === 1
+      ? venueSurfaces
+      : [];
 
   return {
     id: candidate.id,
@@ -819,6 +969,10 @@ function serializeCandidate(entry, index = entry.ranking.rank - 1) {
     localTime: candidate.features?.localTime ?? null,
     distanceKm: Number.isFinite(candidate.features?.distanceKm) ? candidate.features.distanceKm : null,
     durationMinutes: candidate.durationMinutes,
+    componentSlots: candidate.componentSlots ?? [],
+    surface: surfaces[0] ?? null,
+    surfaces,
+    courtSurface: resolvedCourtSurface,
     booking: candidate.booking?.url ? candidate.booking : null,
     availability: {
       nextHourAlsoAvailable: candidate.features?.nextHourFree ?? null,
@@ -834,11 +988,22 @@ function serializeCandidate(entry, index = entry.ranking.rank - 1) {
     accessibility,
     reasons: ranking.reasons ?? [],
     tradeoffs: ranking.tradeoffs ?? [],
+    marginalValue: ranking.marginalValue ?? null,
     warnings: [
       ...(candidate.features?.weatherWarning ? [{ feature: 'weather', detail: candidate.features.weatherWarning }] : []),
       ...(candidate.features?.weatherUnknown ? [{ feature: 'weather', detail: 'weather_unknown' }] : []),
     ],
   };
+}
+
+function canonicalSurfaceType(value) {
+  const normalized = String(value ?? '').trim().toLowerCase().replace(/[_-]+/g, ' ');
+  if (!normalized) return null;
+  if (/clay|red clay/.test(normalized)) return 'clay';
+  if (/synthetic|artificial/.test(normalized)) return 'synthetic';
+  if (/grass|lawn/.test(normalized)) return 'grass';
+  if (/hard|acrylic|concrete|asphalt/.test(normalized)) return 'hard';
+  return normalized;
 }
 
 function endTimeFromStart(startTime, durationMinutes) {
@@ -874,6 +1039,11 @@ function nearbyCourtDistanceKm(venue, target) {
 }
 
 function serializeNearbyCourt(venue, distanceKm) {
+  const surfaces = venue.surfaces?.length === 1
+    ? venue.surfaces
+    : venue.surface && !(venue.surfaces?.length > 1)
+      ? [venue.surface]
+      : [];
   return {
     id: venue.id,
     venue: venue.name,
@@ -891,7 +1061,10 @@ function serializeNearbyCourt(venue, distanceKm) {
     booking: venue.booking?.url ? venue.booking : null,
     venueUrl: venue.venueUrl ?? null,
     courtCount: venue.courtCount ?? null,
-    surface: venue.surface ?? null,
+    surface: surfaces[0] ?? null,
+    surfaces,
+    courtSurfaces: venue.courtSurfaces ?? {},
+    pricing: venue.pricing ?? null,
     provider: venue.provider ?? null,
     verificationStatus: venue.verificationStatus,
     settings: venue.settings ?? [],
@@ -904,7 +1077,9 @@ function selectNearbyCourts(searchScope = {}, tierOneEntries = [], {
 } = {}) {
   const requestedSettings = new Set(searchScope.venueSettings ?? []);
   const settingSearch = requestedSettings.size > 0;
-  if (searchScope.locationSource !== 'explicit' && !settingSearch) return [];
+  const requestedSurfaces = new Set(searchScope.surfaces ?? []);
+  const surfaceSearch = requestedSurfaces.size > 0;
+  if (searchScope.locationSource !== 'explicit' && !settingSearch && !surfaceSearch) return [];
   const target = searchScope.targetLocation;
   if (!centerForTarget(target)) return [];
 
@@ -917,6 +1092,7 @@ function selectNearbyCourts(searchScope = {}, tierOneEntries = [], {
       && venue.sport === 'tennis'
       && venue.realtimeAvailability === false
       && (!settingSearch || (venue.settings ?? []).some((setting) => requestedSettings.has(setting)))
+      && (!surfaceSearch || (venue.surfaces ?? []).some((surface) => requestedSurfaces.has(surface)))
       && !excluded.has(venue.id)
       && !excluded.has(canonicalVenueKey(venue.name))
     ))
@@ -925,7 +1101,7 @@ function selectNearbyCourts(searchScope = {}, tierOneEntries = [], {
       distanceKm: nearbyCourtDistanceKm(venue, target),
     }))
     .filter((entry) => Number.isFinite(entry.distanceKm)
-      && (settingSearch && searchScope.locationSource !== 'explicit'
+      && ((settingSearch || surfaceSearch) && searchScope.locationSource !== 'explicit'
         ? true
         : entry.distanceKm * 1000 <= radiusMeters))
     .sort((a, b) => a.distanceKm - b.distanceKm || a.venue.name.localeCompare(b.venue.name))
@@ -1047,10 +1223,12 @@ function serializeRun({
   finishedAt = new Date().toISOString(),
 }) {
   const ranked = rankedCandidateObjects(result.state.candidates, result.rankedCandidates);
-  const diversified = diversifyRankedCandidates(ranked, {
-    limit: 10,
-    explicitTime: presentationHasExplicitTime(profile),
-  });
+  const diversified = result.rankingMode === 'llm_slate'
+    ? ranked.slice(0, 10)
+    : diversifyRankedCandidates(ranked, {
+      limit: 10,
+      explicitTime: presentationHasExplicitTime(profile),
+    });
   demoTemporalTrace('FIRST_FINAL_SLOT', diversified[0]?.candidate?.startTime ?? '');
   const nearbyCourts = selectNearbyCourts(result.state.searchScope, diversified);
   const latestIteration = result.iterations.at(-1) ?? null;
@@ -1076,6 +1254,7 @@ function serializeRun({
       providerObservations,
       totalCandidates: summarizeCandidates(result.state.candidates).total,
       feasibleCandidates: result.state.candidates.length,
+      rankingMode: result.rankingMode ?? null,
       rejectedCandidates: result.state.rejectedCandidates.length,
       rejectedByReason: summarizeRejected(result.state.rejectedCandidates),
       iterations: result.iterations.length,
@@ -1101,6 +1280,9 @@ function serializeRun({
       stateAfter: iteration.stateAfter,
       candidateCount: iteration.candidateCount,
       searchScope: iteration.searchScope,
+      observation: iteration.observation,
+      rankedCandidates: iteration.rankedCandidates,
+      factualCandidateFeatures: iteration.factualCandidateFeatures,
     })),
   };
 }
@@ -1115,6 +1297,8 @@ async function recommendCourts({
   temporalPolicyProvider = null,
   replannerProvider = null,
   replannerMode = null,
+  rankerProvider = null,
+  rankerMode = null,
   observeCandidates = null,
   userProfile = null,
   recentBehavior = {},
@@ -1138,10 +1322,14 @@ async function recommendCourts({
   const startedAt = now.toISOString();
   await loadEnvFile();
   const selectedReplannerMode = replannerMode ?? process.env.REPLANNER_MODE ?? 'llm';
+  const selectedRankerMode = rankerMode ?? process.env.RANKER_MODE ?? 'llm';
   const selectedMaxIterations = maxIterations ?? Number(process.env.RECOMMEND_MAX_ITERATIONS ?? 3);
   const selectedReplannerProvider = selectedReplannerMode === 'heuristic'
     ? null
     : replannerProvider ?? createOpenAiReplannerProvider();
+  const selectedRankerProvider = selectedRankerMode === 'heuristic'
+    ? null
+    : rankerProvider ?? createOpenAiRankerProvider();
   let requestPreferences;
   try {
     requestPreferences = await interpretPreferences(request, { provider: preferenceProvider, now });
@@ -1220,13 +1408,30 @@ async function recommendCourts({
     : null;
 
   try {
+    const baseObserve = observeCandidates ?? ((state) => observeRealCandidates(state, {
+      signal: budgetController.signal,
+      providerTimeoutMs,
+      susfProviderTimeoutMs,
+    }));
     const result = await runReplanningLoop(initialState, {
       provider: selectedReplannerProvider,
-      observe: observeCandidates ?? ((state) => observeRealCandidates(state, {
-          signal: budgetController.signal,
-          providerTimeoutMs,
-          susfProviderTimeoutMs,
-        })),
+      observe: async (state) => {
+        const observed = await baseObserve(state);
+        return {
+          ...observed,
+          candidates: materializeLogicalDurationCandidates(
+            observed?.candidates ?? state.candidates,
+            state.preferences,
+          ).map((candidate) => ({
+            ...candidate,
+            features: {
+              ...candidate.features,
+              surface: candidateSurface(candidate),
+            },
+          })),
+        };
+      },
+      rankerProvider: selectedRankerProvider,
       maxIterations: selectedMaxIterations,
       minCandidates,
     });
@@ -1250,11 +1455,13 @@ async function recommendCourts({
 
 export {
   buildPreferredTemporalPolicy,
+  applySurfaceScope,
   classifyTemporalSpecificity,
   diversifyRankedCandidates,
   inferPersonalizedTemporalPolicy,
   locationProviderRouting,
   providerOptionsForState,
+  materializeLogicalDurationCandidates,
   recommendCourts,
   selectNearbyCourts,
   serializeCandidate,

@@ -15,7 +15,7 @@ function candidate({
   walkMinutes = 18,
   driveMinutes = 10,
   nextHourFree = false,
-  startTime = '2026-09-20T07:00:00.000Z',
+  startTime = '2026-09-22T07:00:00.000Z',
   venue = 'SUSF',
   distanceKm = null,
 }) {
@@ -49,7 +49,7 @@ function candidate({
       price,
       priceOptions: [],
       distanceKm,
-      localDate: '2026-09-20',
+      localDate: startTime.slice(0, 10),
       localTime: startTime.slice(11, 16),
       accessibility,
       weather: { forecastAvailable: true, precipitationProbability: 0, precipitationMm: 0 },
@@ -137,6 +137,7 @@ test('hard rejected candidates do not enter the bounded LLM ranker', async () =>
           rank: index + 1,
           reasons: ['Uses only provided facts.'],
           tradeoffs: ['No replanning action proposed.'],
+          marginalValue: index === 0 ? 'Strongest individual fit.' : 'Adds another feasible option.',
         })),
       };
     },
@@ -159,7 +160,44 @@ test('ranker input contains factual candidate snapshots only', () => {
   assert.equal(input.candidates[0].continuousDurationMinutes, 120);
   assert.equal(input.candidates[0].accessibility.TRANSIT.durationMinutes, 35);
   assert.equal(input.candidates[0].weather.precipitationProbability, 0);
+  assert.equal(input.slateSize, 1);
   assert.equal(input.candidates[0].source, undefined);
+});
+
+test('LLM ranker preserves a jointly selected slate and its marginal value', async () => {
+  const candidates = abcCandidates();
+  candidates[0].venue = 'USYD';
+  candidates[1].venue = 'City';
+  candidates[2].venue = 'USYD';
+
+  const result = await rankCandidates({
+    preferenceProfile: softTradeoffProfile(),
+    candidates,
+    provider: ({ input, messages }) => {
+      assert.equal(input.slateSize, 3);
+      assert.match(messages[0].content, /optimize them jointly/);
+      return {
+        rankedCandidates: [
+          {
+            candidateId: 'A', rank: 1, reasons: ['Strong preference fit.'], tradeoffs: ['Longer transit.'],
+            marginalValue: 'Best overall preference fit.',
+          },
+          {
+            candidateId: 'B', rank: 2, reasons: ['Strong preference fit.'], tradeoffs: ['Higher price.'],
+            marginalValue: 'Adds a different venue choice.',
+          },
+          {
+            candidateId: 'C', rank: 3, reasons: ['Feasible alternative.'], tradeoffs: ['Less continuous availability.'],
+            marginalValue: 'Adds another feasible time choice.',
+          },
+        ],
+      };
+    },
+  });
+
+  assert.equal(result.rankingMode, 'llm_slate');
+  assert.deepEqual(result.rankedCandidates.map((item) => item.candidateId), ['A', 'B', 'C']);
+  assert.match(result.rankedCandidates[1].marginalValue, /different venue/);
 });
 
 test('LLM factual value rewrites are rejected and fall back deterministically', async () => {

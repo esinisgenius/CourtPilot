@@ -251,10 +251,11 @@ function evaluateStartTime(candidate, preferenceProfile) {
   const constraints = startTimeConstraints(preferenceProfile);
   const failures = [];
   const window = temporalWindow(preferenceProfile);
-  if (window?.timeStart || window?.timeEnd) {
+  if (window?.timeStart || window?.timeEnd || window?.timeWindows?.length) {
     if (!candidateMatchesTemporalWindow(candidate, {
       timeStart: window.timeStart ?? null,
       timeEnd: window.timeEnd ?? null,
+      timeWindows: window.timeWindows ?? null,
     })) {
       failures.push({
         feature: 'start_time',

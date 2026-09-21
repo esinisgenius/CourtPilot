@@ -67,6 +67,7 @@ function normalizeVenueConfig(config) {
     venueId: config.venueId == null ? null : String(config.venueId),
     enabled: config.enabled !== false,
     auditCourtCount: config.auditCourtCount ?? null,
+    allowPartialCourtIdentity: config.allowPartialCourtIdentity === true,
   };
 }
 
@@ -267,7 +268,7 @@ function normalizeAvailability({
   const grid = parseGridFragment(fragment);
   mergeCourtIdentity(courtMap, grid);
   const missing = incompleteCourtNames(courtMap);
-  if (missing.length > 0) {
+  if (missing.length > 0 && !venue.allowPartialCourtIdentity) {
     throw new SportLogicAvailabilityError(
       'SPORTLOGIC_COURT_ID_INCOMPLETE',
       `SportLogic court identity discovery incomplete for ${venue.name}: ${missing.join(', ')}`,
@@ -354,7 +355,7 @@ async function discoverCourtIdentity({ venue, metadata, date, days, cookieHeader
   }
 
   const missing = incompleteCourtNames(courtMap);
-  if (missing.length > 0) {
+  if (missing.length > 0 && !venue.allowPartialCourtIdentity) {
     throw new SportLogicAvailabilityError(
       'SPORTLOGIC_COURT_ID_INCOMPLETE',
       `SportLogic court identity discovery incomplete for ${venue.name} after ${days} day(s): ${missing.join(', ')}`,

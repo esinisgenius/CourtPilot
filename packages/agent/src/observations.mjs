@@ -27,6 +27,24 @@ function mergeCandidates(existingCandidates, newCandidates) {
   return [...byId.values()].sort((a, b) => `${a.startTime} ${a.venue} ${a.court}`.localeCompare(`${b.startTime} ${b.venue} ${b.court}`));
 }
 
+async function fetchAvailabilityVariants(fetchAvailability, options, budgetOptions) {
+  const variants = Array.isArray(options) ? options : [options];
+  const availability = [];
+  for (const variant of variants) {
+    const rows = await fetchWithBudget(fetchAvailability, variant, budgetOptions);
+    availability.push(...rows);
+  }
+  const byKey = new Map();
+  for (const row of availability) {
+    const canonical = row?.canonical;
+    const key = canonical
+      ? [canonical.provider, canonical.venue?.id, canonical.court?.id, canonical.slot?.start, canonical.slot?.durationMinutes].join('|')
+      : JSON.stringify(row);
+    byKey.set(key, row);
+  }
+  return [...byKey.values()];
+}
+
 function providerObservation(providerId, {
   status,
   candidateCount = 0,
@@ -120,7 +138,7 @@ async function observeConfiguredAvailabilityProviders(state, {
     }
 
     try {
-      const availability = await fetchWithBudget(fetchAvailability, availabilityOptions[providerId] ?? availabilityOptions, {
+      const availability = await fetchAvailabilityVariants(fetchAvailability, availabilityOptions[providerId] ?? availabilityOptions, {
         providerTimeoutMs: timeoutMsForProvider(providerId, { providerTimeoutMs, susfProviderTimeoutMs }),
         signal,
       });

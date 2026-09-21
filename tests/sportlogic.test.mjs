@@ -103,7 +103,7 @@ function mockFetch({ fragment = fixtureFragment, wafChallenge = false } = {}) {
 }
 
 test('SportLogic default registry contains Burwood production metadata', () => {
-  assert.equal(DEFAULT_SPORTLOGIC_VENUES.length, 2);
+  assert.equal(DEFAULT_SPORTLOGIC_VENUES.length, 7);
   const venue = DEFAULT_SPORTLOGIC_VENUES.find((item) => item.id === 'sportlogic-burwood-tennis-courts');
   assert.equal(venue.provider, 'sportlogic');
   assert.equal(venue.name, 'Burwood Tennis Courts');
@@ -114,6 +114,18 @@ test('SportLogic default registry contains Burwood production metadata', () => {
   const collaroy = DEFAULT_SPORTLOGIC_VENUES.find((item) => item.id === 'sportlogic-collaroy-tennis-club');
   assert.equal(collaroy.clientId, 'collaroy-tc');
   assert.equal(collaroy.auditCourtCount, 6);
+  const meadowbank = DEFAULT_SPORTLOGIC_VENUES.find((item) => item.id === 'sportlogic-meadowbank-park-tennis-centre');
+  assert.deepEqual(meadowbank.surfaces, ['clay', 'synthetic']);
+  assert.equal(meadowbank.auditCourtCount, 8);
+  const northShore = DEFAULT_SPORTLOGIC_VENUES.filter((item) => [
+    'sportlogic-artarmon-tennis-centre',
+    'sportlogic-cammeray-tennis-club',
+    'sportlogic-primrose-park-tennis',
+    'sportlogic-mosman-lawn-tennis-club',
+  ].includes(item.id));
+  assert.equal(northShore.length, 4);
+  assert.equal(northShore.every((item) => item.surfaces.includes('synthetic')), true);
+  assert.equal(northShore.every((item) => item.officialUrl.startsWith('https://www.tennisvenues.com.au/booking/')), true);
 });
 
 test('SportLogic discovery reads client id from public booking URL', () => {
@@ -303,6 +315,21 @@ test('SportLogic incomplete court id discovery fails explicitly instead of silen
     assert.match(error.failures[0].message, /Court 2/);
     return true;
   });
+});
+
+test('SportLogic partial identity is available only for an explicitly opted-in venue', async () => {
+  const availability = await readAvailability({
+    venues: [{ ...venueConfig, allowPartialCourtIdentity: true }],
+    date: '2026-09-04',
+    durationMinutes: 60,
+    identityDiscoveryDays: 1,
+    fetchImpl: mockFetch({ fragment: incompleteIdentityFragment }),
+    bootstrapSessionImpl: mockBootstrap(),
+  });
+
+  assert.equal(availability.length, 1);
+  assert.equal(availability[0].court, 'Court 1');
+  assert.match(availability[0].bookingUrl, /id=C1/);
 });
 
 test('SportLogic WAF challenge after bootstrap is an explicit provider failure', async () => {

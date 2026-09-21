@@ -14,6 +14,7 @@ const DEFAULT_CLUBSPARK_VENUES = Object.freeze([
     enabled: true,
     auditCourtCount: 2,
     settings: ['coastal', 'scenic', 'ocean_nearby'],
+    surfaces: ['hard'],
   },
   {
     id: 'clubspark-kiama-blowhole-tennis-club',
@@ -30,6 +31,7 @@ const DEFAULT_CLUBSPARK_VENUES = Object.freeze([
     enabled: true,
     auditCourtCount: 2,
     settings: ['coastal', 'scenic', 'ocean_view'],
+    surfaces: ['synthetic'],
   },
 ]);
 

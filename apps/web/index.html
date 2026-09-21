@@ -570,9 +570,32 @@
       .explain-card,
       .empty-card,
       details.development-details {
+        min-width: 0;
         border: 1px solid var(--line);
         border-radius: 16px;
         background: var(--card);
+      }
+
+      .court-card *,
+      .nearby-card *,
+      .explain-card *,
+      .empty-card *,
+      details.development-details * {
+        min-width: 0;
+      }
+
+      .court-card h3,
+      .court-card p,
+      .nearby-card h3,
+      .nearby-card span,
+      .explain-card h2,
+      .explain-card p,
+      .empty-card h3,
+      .empty-card p,
+      details.development-details strong,
+      details.development-details span {
+        overflow-wrap: anywhere;
+        word-break: normal;
       }
 
       .court-card {
@@ -606,6 +629,8 @@
       }
 
       .court-thumb {
+        width: 100%;
+        min-width: 0;
         min-height: 92px;
         display: grid;
         place-items: center;
@@ -617,6 +642,9 @@
         font-weight: 800;
         line-height: 1.25;
         text-align: center;
+        overflow-wrap: anywhere;
+        word-break: normal;
+        hyphens: auto;
       }
 
       .court-card:not(.is-best) .court-thumb,
@@ -635,6 +663,7 @@
         font-size: 16px;
         font-weight: 800;
         line-height: 1.2;
+        text-wrap: pretty;
       }
 
       .detail-stack {
@@ -661,10 +690,14 @@
       }
 
       .fact-chip {
+        max-width: 100%;
         min-height: auto;
         padding: 0;
         background: transparent;
         font-size: 11px;
+        line-height: 1.35;
+        white-space: normal;
+        text-align: left;
       }
 
       .fact-chip.warning {
@@ -673,7 +706,11 @@
 
       .book-link {
         min-height: 46px;
+        padding: 10px 14px;
         font-size: 15px;
+        line-height: 1.25;
+        white-space: normal;
+        overflow-wrap: anywhere;
       }
 
       .book-link span {
@@ -729,6 +766,10 @@
       .nearby-meta span {
         color: var(--muted);
         font-size: 12px;
+      }
+
+      .nearby-facts {
+        margin-top: 9px;
       }
 
       .nearby-card .book-link {

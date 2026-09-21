@@ -9,6 +9,7 @@ export {
 export {
   EVALUATOR_STATUS,
   buildDiagnosticSnapshot,
+  buildReplanningObservation,
   evaluateCandidateSet,
   preferenceMatchesCandidate,
 } from './evaluator.mjs';
@@ -52,6 +53,7 @@ export {
 
 export {
   ReplannerError,
+  applyPreferencePatch,
   evaluateCurrentCandidateSet,
   evaluateReplanningContext,
   executeReplanningAction,

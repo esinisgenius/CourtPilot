@@ -223,7 +223,7 @@ const DEFAULT_BOOKABLE_VENUES = [
     venueId: 114,
     organisationId: 1,
     enabled: true,
-    auditCourtCount: 1,
+    auditCourtCount: 4,
   },
   {
     id: 'bookable-bayside-scarborough-park',

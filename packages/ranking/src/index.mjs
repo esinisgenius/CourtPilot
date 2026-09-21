@@ -9,6 +9,12 @@ export {
 } from './llm-ranker.mjs';
 
 export {
+  LlmRankerProviderError,
+  createOpenAiRankerProvider,
+  parseRankerContent,
+} from './openai-provider.mjs';
+
+export {
   RankerSchemaError,
   buildRankerInput,
   rankerOutputJsonSchema,

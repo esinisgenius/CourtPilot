@@ -332,6 +332,134 @@ function compactNearMiss(candidate, preferences = []) {
   };
 }
 
+function providerSummary(factualObservations = {}) {
+  return (factualObservations.availability?.providers ?? []).map((entry) => ({
+    provider: entry.providerId,
+    queried: ['success', 'failed', 'timed_out', 'cancelled'].includes(entry.status),
+    status: entry.status,
+    candidateCount: entry.candidateCount ?? 0,
+    failure: entry.error ? {
+      code: entry.error.code ?? 'PROVIDER_ERROR',
+      message: entry.error.message ?? null,
+    } : null,
+  }));
+}
+
+function compactCandidate(candidate) {
+  const weather = candidate.features?.weather ?? null;
+  const startMs = Date.parse(candidate.startTime);
+  const durationMs = Number(candidate.durationMinutes) * 60 * 1000;
+  return {
+    id: candidate.id ?? null,
+    venue: candidate.venue ?? null,
+    court: candidate.court ?? null,
+    date: candidate.features?.localDate ?? candidate.startTime?.slice?.(0, 10) ?? null,
+    time: candidate.features?.localTime ?? candidate.startTime?.slice?.(11, 16) ?? null,
+    endTime: Number.isFinite(startMs) && Number.isFinite(durationMs)
+      ? new Date(startMs + durationMs).toISOString()
+      : null,
+    durationMin: candidate.durationMinutes ?? null,
+    price: candidate.features?.price ?? null,
+    distanceKm: Number.isFinite(candidate.features?.distanceKm) ? candidate.features.distanceKm : null,
+    nextHourAlsoAvailable: candidate.features?.nextHourFree ?? null,
+    weather: weather?.summary ?? weather?.condition ?? weather?.weatherCondition ?? null,
+    provider: candidate.source?.provider ?? null,
+    rejectedReasons: [],
+  };
+}
+
+function compactRejectedCandidate(entry) {
+  const candidate = entry.candidate ?? entry;
+  return {
+    ...compactCandidate(candidate),
+    rejectedReasons: (entry.reasons ?? entry.failedConstraints ?? [])
+      .map((reason) => reason.reason ?? reason.code ?? reason.feature ?? String(reason))
+      .slice(0, 3),
+  };
+}
+
+function humanDiagnostics(diagnostics = {}, evaluation = {}) {
+  const messages = [];
+  for (const reason of diagnostics.reasons ?? evaluation.reasons ?? []) {
+    messages.push(String(reason));
+  }
+  for (const preference of diagnostics.weakPreferences ?? evaluation.weakPreferences ?? []) {
+    messages.push(`Weak preference: ${preference.feature}${preference.reason ? ` (${preference.reason})` : ''}`);
+  }
+  for (const issue of evaluation.observationIssues ?? []) {
+    messages.push(`Observation issue: ${issue.code}`);
+  }
+  const hardFailures = diagnostics.hardConstraintFailures ?? {};
+  for (const [reason, count] of Object.entries(hardFailures)) {
+    messages.push(`${count} candidate${count === 1 ? '' : 's'} rejected because of ${reason}`);
+  }
+  const coverage = diagnostics.searchCoverage ?? {};
+  if ((coverage.availableProviders ?? []).length > 0) {
+    messages.push(`Unsearched providers remain: ${coverage.availableProviders.join(', ')}`);
+  }
+  if (coverage.locationRoutingStatus) {
+    messages.push(`Location routing status: ${coverage.locationRoutingStatus}`);
+  }
+  return [...new Set(messages)].slice(0, 8);
+}
+
+function compactSearchScope(searchScope = {}) {
+  const providerScope = searchScope.providerScope ?? {};
+  return {
+    location: searchScope.location ?? searchScope.targetLocation?.text ?? null,
+    locationSource: searchScope.locationSource ?? null,
+    targetLocation: searchScope.targetLocation ? {
+      text: searchScope.targetLocation.text ?? null,
+      canonicalName: searchScope.targetLocation.canonicalName ?? null,
+      confidence: searchScope.targetLocation.confidence ?? null,
+    } : null,
+    radiusMeters: searchScope.radiusMeters ?? null,
+    dateRange: searchScope.dateRange ?? null,
+    timeWindow: searchScope.timeWindow ?? null,
+    temporalWindow: searchScope.temporalWindow ?? null,
+    providerScope: {
+      activeProviderIds: providerScope.activeProviderIds ?? [],
+      observedProviderIds: providerScope.observedProviderIds ?? [],
+      failedProviderIds: providerScope.failedProviderIds ?? [],
+      expandableProviderIds: providerScope.expandableProviderIds ?? [],
+    },
+    locationRouting: searchScope.locationRouting ? {
+      status: searchScope.locationRouting.status ?? null,
+      matchedVenueCount: searchScope.locationRouting.matchedVenues?.length ?? 0,
+      activeProviderIds: searchScope.locationRouting.activeProviderIds ?? [],
+    } : null,
+  };
+}
+
+function buildReplanningObservation(state, {
+  evaluation = {},
+  diagnostics = {},
+  observedCandidateCount = state.candidates?.length ?? 0,
+  representativeLimit = 5,
+} = {}) {
+  return {
+    iteration: state.iteration,
+    userRequest: state.goal,
+    preferences: {
+      searchScope: state.preferences?.searchScope ?? {},
+      hardConstraints: state.preferences?.hardConstraints ?? [],
+      softPreferences: state.preferences?.preferences ?? [],
+      objectives: state.preferences?.objectives ?? [],
+      unresolvedPreferences: state.preferences?.unresolvedPreferences ?? [],
+    },
+    searchScope: compactSearchScope(state.searchScope),
+    providerSummary: providerSummary(state.factualObservations),
+    candidateSummary: {
+      total: observedCandidateCount,
+      afterHardConstraints: state.candidates?.length ?? 0,
+      rejected: state.rejectedCandidates?.length ?? 0,
+      topCandidates: (state.candidates ?? []).slice(0, representativeLimit).map(compactCandidate),
+      nearMisses: (state.rejectedCandidates ?? []).slice(-representativeLimit).map(compactRejectedCandidate),
+    },
+    diagnostics: humanDiagnostics(diagnostics, evaluation),
+  };
+}
+
 function buildDiagnosticSnapshot(state, evaluation, {
   observedCandidateCount = state.candidates?.length ?? 0,
   maxNearMisses = 5,
@@ -386,6 +514,7 @@ function buildDiagnosticSnapshot(state, evaluation, {
 export {
   EVALUATOR_STATUS,
   buildDiagnosticSnapshot,
+  buildReplanningObservation,
   evaluateCandidateSet,
   preferenceMatchesCandidate,
 };

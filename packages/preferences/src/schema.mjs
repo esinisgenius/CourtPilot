@@ -193,8 +193,9 @@ function normalizeSearchScope(profile, { sourceText = '' } = {}) {
     if (inferredLocation) scope.location = inferredLocation;
   }
   scope.isExplicit = scope.isExplicit ?? hasExplicitSearchScope(scope);
-  if (!isPlainObject(scope.dateRange)) {
-    const inferredDateRange = inferDateRangeFromText(scope.sourceText);
+  const inferredDateRange = inferDateRangeFromText(scope.sourceText);
+  if (!isPlainObject(scope.dateRange)
+    || (scope.dateRange.type === 'next_week' && inferredDateRange?.type === 'specific_date')) {
     if (inferredDateRange) scope.dateRange = inferredDateRange;
   }
   const dateRange = stripNullableOptionals(scope.dateRange);
@@ -449,6 +450,49 @@ function upsertSoftPreference(preferences, preference) {
 function repairNaturalLanguageSemantics(profile) {
   const text = profile.sourceText ?? '';
 
+  const requestsWeatherComfort = includesAny(text, ['不要太晒', '不晒', '别太晒', 'uv低', 'uv 低', '别太热', '不要太热']);
+  const requestsVenueShelter = includesAny(text, ['室内场', '室内球场', 'indoor court', 'indoor courts', '有棚', '带棚', 'covered court']);
+  if (requestsWeatherComfort && !requestsVenueShelter) {
+    profile.preferences = profile.preferences.filter((preference) => preference.feature !== 'venue_setting');
+    profile.hardConstraints = profile.hardConstraints.filter((constraint) => constraint.feature !== 'venue_setting');
+    profile.preferences = upsertSoftPreference(profile.preferences, {
+      feature: 'weather',
+      type: 'soft',
+      importance: 'medium',
+      priority: 'medium',
+      relaxable: true,
+      relaxationDirection: 'ask_user',
+      sourceText: text,
+      direction: 'preferred',
+      rule: { condition: 'comfortable' },
+      source: 'user',
+      isExplicit: true,
+    });
+  }
+
+  const requestedSurfaces = [];
+  if (includesAny(text, ['红土', '泥地', 'clay court', 'clay courts', 'clay surface'])) requestedSurfaces.push('clay');
+  if (includesAny(text, ['草地球场', '天然草地', 'grass court', 'grass courts', 'natural grass'])) requestedSurfaces.push('grass');
+  if (includesAny(text, ['硬地', '硬地球场', 'hard court', 'hard courts', 'acrylic court'])) requestedSurfaces.push('hard');
+  if (includesAny(text, ['合成场地', '合成球场', '人造草', 'synthetic court', 'synthetic courts', 'synthetic grass', 'artificial grass'])) {
+    requestedSurfaces.push('synthetic');
+  }
+  if (requestedSurfaces.length > 0) {
+    profile.preferences = upsertSoftPreference(profile.preferences, {
+      feature: 'surface',
+      type: 'soft',
+      importance: 'high',
+      priority: 'high',
+      relaxable: true,
+      relaxationDirection: 'include_nonpreferred',
+      sourceText: text,
+      direction: 'preferred',
+      rule: { include: [...new Set(requestedSurfaces)] },
+      source: 'user',
+      isExplicit: true,
+    });
+  }
+
   const venueSettings = [];
   if (includesAny(text, ['海边', '靠海', '海景', '海岸', 'beach', 'coastal', 'ocean', 'seaside'])) {
     venueSettings.push('coastal');
@@ -579,7 +623,26 @@ function canonicalizeRule(feature, rule) {
   if (!isPlainObject(rule)) return rule;
   if (feature === 'start_time') return canonicalizeStartTimeRule(rule);
   if (feature === 'weather') return canonicalizeWeatherRule(rule);
+  if (feature === 'surface') return canonicalizeSurfaceRule(rule);
   return rule;
+}
+
+function normalizeSurfaceType(value) {
+  const normalized = String(value ?? '').trim().toLowerCase().replace(/[_-]+/g, ' ');
+  if (/\b(clay|red clay)\b|红土|土场/u.test(normalized)) return 'clay';
+  if (/\b(synthetic|artificial)(?: grass)?\b|人造草|合成场|合成球场/u.test(normalized)) return 'synthetic';
+  if (/\b(grass|lawn)\b|草地|草场|草坪/u.test(normalized)) return 'grass';
+  if (/\b(hard|acrylic|concrete|asphalt)\b|硬地|硬场|丙烯酸/u.test(normalized)) return 'hard';
+  return normalized || null;
+}
+
+function canonicalizeSurfaceRule(rule) {
+  const normalized = { ...rule };
+  for (const key of ['include', 'exclude', 'values']) {
+    if (!Array.isArray(normalized[key])) continue;
+    normalized[key] = [...new Set(normalized[key].map(normalizeSurfaceType).filter(Boolean))];
+  }
+  return stripNullableOptionals(normalized);
 }
 
 function canonicalizeWeatherCondition(condition) {
@@ -670,6 +733,12 @@ function inferDateRangeFromText(text = '') {
 
 function inferLocationFromText(text = '') {
   if (!text) return undefined;
+  if (includesAny(text, ['strathfield', 'strathfield附近'])) {
+    return 'Strathfield';
+  }
+  if (includesAny(text, ['burwood', 'burwood附近'])) {
+    return 'Burwood';
+  }
   if (includesAny(text, ['悉大', '悉尼大学', 'usyd', 'sydney uni', 'university of sydney'])) {
     return '悉尼大学附近';
   }
@@ -947,6 +1016,25 @@ function repairCourtCountSourceText(preferences, wholeSourceText = '') {
 
 function addSourceDerivedHardConstraints(hardConstraints, wholeSourceText = '') {
   const added = [...hardConstraints];
+  const beforeAfterRule = inferBeforeAfterStartTimeRuleFromText(wholeSourceText);
+  if (beforeAfterRule && !added.some((item) => (
+    item.feature === 'start_time'
+      && item.rule?.before === beforeAfterRule.before
+      && item.rule?.after === beforeAfterRule.after
+  ))) {
+    added.push({
+      feature: 'start_time',
+      type: 'hard',
+      importance: 'medium',
+      priority: 'medium',
+      relaxable: false,
+      sourceText: beforeAfterRule.sourceText,
+      direction: 'preferred',
+      rule: { before: beforeAfterRule.before, after: beforeAfterRule.after },
+      source: 'user',
+      isExplicit: true,
+    });
+  }
   if (wholeSourceText.includes('下午有事') && !added.some((item) => item.feature === 'start_time' && item.sourceText === '我下午有事')) {
     added.push({
       feature: 'start_time',
@@ -971,6 +1059,33 @@ function addSourceDerivedHardConstraints(hardConstraints, wholeSourceText = '') 
     });
   }
   return added;
+}
+
+function normalizeLooseHour(hour, minute = '00') {
+  const numericHour = Number(hour);
+  const numericMinute = Number(minute);
+  if (!Number.isInteger(numericHour) || numericHour < 0 || numericHour > 23) return null;
+  if (!Number.isInteger(numericMinute) || numericMinute < 0 || numericMinute > 59) return null;
+  return `${String(numericHour).padStart(2, '0')}:${String(numericMinute).padStart(2, '0')}`;
+}
+
+function inferBeforeAfterStartTimeRuleFromText(text = '') {
+  const normalized = String(text);
+  const beforeMatch = normalized.match(/(\d{1,2})(?::([0-5]\d))?\s*(?:点)?\s*(?:前|以前|之前)/);
+  const afterMatch = normalized.match(/(\d{1,2})(?::([0-5]\d))?\s*(?:点)?\s*(?:后|以后|之后)/);
+  if (!beforeMatch || !afterMatch) return null;
+  const connectorStart = beforeMatch.index + beforeMatch[0].length;
+  const connectorEnd = afterMatch.index;
+  const connector = normalized.slice(connectorStart, connectorEnd);
+  if (!/(或者|或|和|、|,|，|\/|\bor\b)/iu.test(connector)) return null;
+  const before = normalizeLooseHour(beforeMatch[1], beforeMatch[2] ?? '00');
+  const after = normalizeLooseHour(afterMatch[1], afterMatch[2] ?? '00');
+  if (!before || !after) return null;
+  return {
+    before,
+    after,
+    sourceText: normalized.slice(beforeMatch.index, afterMatch.index + afterMatch[0].length).trim(),
+  };
 }
 
 function addUnresolvedOnce(items, text, reason = 'ambiguous') {

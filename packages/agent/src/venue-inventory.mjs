@@ -7,6 +7,41 @@ import { DEFAULT_UNIFIED_BOOKINGS_VENUES } from '../../unified-bookings/src/inde
 
 const SUSF_BOOKING_URL = 'https://susf.perfectmind.com/39161/Clients/BookMe4FacilityList/List?calendarId=7cb1945d-e899-4e40-96c4-8ee784ccfc2d&widgetId=c5b8cc8a-09fe-48ae-a693-df5c09f81adb&embed=False';
 
+const USER_SUPPLIED_COURT_METADATA = Object.freeze({
+  'susf-tennis': { courtSurfaces: { 1: 'hard', 2: 'hard', 3: 'hard', 4: 'synthetic', 5: 'synthetic', 6: 'synthetic' }, pricingByCourt: { 1: [34, 50], 2: [34, 50], 3: [34, 50], 4: [29, 34], 5: [29, 34], 6: [29, 34] } },
+  'intrac-moore-park-tennis-courts': { surfaces: ['synthetic'], pricing: [32, 39] },
+  'intrac-centennial-parklands-sports-centre': { courtSurfaces: { 1: 'synthetic', 2: 'synthetic', 3: 'synthetic', 4: 'synthetic', 5: 'synthetic', 6: 'synthetic', 7: 'synthetic', 8: 'synthetic', 9: 'synthetic', 10: 'hard', 11: 'hard' }, pricing: [32, 39] },
+  'intrac-camperdown-tennis': { surfaces: ['synthetic'] },
+  'mindbody-rushcutters-bay-park': { surfaces: ['synthetic'] },
+  'sportlogic-burwood-tennis-courts': { surfaces: ['hard'] },
+  'unified-strathfield-sports-club-tennis': { surfaces: ['synthetic'] },
+  'bookable-bayside-aloha-street': { surfaces: ['synthetic'] },
+  'bookable-bayside-bexley': { courtSurfaces: { 1: 'synthetic', 2: 'synthetic', 3: 'hard', 4: 'hard' } },
+  'static-coogee-beach-tennis': { surfaces: ['synthetic'] },
+  'static-mutch-park-tennis-centre': { surfaces: ['synthetic', 'hard'] },
+  'static-sydney-olympic-park-tennis-centre': { surfaces: ['hard'] },
+  'static-cintra-park-tennis-sports-centre': { surfaces: ['synthetic'] },
+  'bookable-krg-hamilton-park': { surfaces: ['hard'] },
+  'bookable-krg-st-ives-village-green': { surfaces: ['hard'] },
+  'bookable-krg-warrimoo-oval': { surfaces: ['hard'] },
+  'bookable-krg-richmond-park': { surfaces: ['hard'] },
+  'bookable-krg-loyal-henry-park': { surfaces: ['hard'] },
+  'bookable-krg-roseville-park': { surfaces: ['hard', 'synthetic'] },
+  'bookable-krg-the-glade-reserve': { surfaces: ['hard'] },
+  'bookable-krg-lindfield-soldiers-memorial-park': { surfaces: ['synthetic'] },
+  'bookable-krg-lindfield-community-centre': { surfaces: ['synthetic'] },
+  'bookable-krg-allan-small-park': { surfaces: ['hard', 'synthetic'] },
+  'bookable-krg-regimental-park': { surfaces: ['hard'] },
+  'bookable-krg-kent-oval': { surfaces: ['hard'] },
+  'bookable-krg-turramurra-memorial-park': { surfaces: ['hard', 'synthetic'] },
+  'bookable-krg-robert-pymble-park': { surfaces: ['hard', 'synthetic'] },
+  'bookable-krg-canoon-road-recreation-area': { surfaces: ['hard', 'synthetic'] },
+  'bookable-krg-kendall-village-green': { surfaces: ['hard', 'synthetic'] },
+  'sportlogic-meadowbank-park-tennis-centre': { courtSurfaces: { 1: 'synthetic', 2: 'synthetic', 3: 'clay', 4: 'clay', 5: 'synthetic', 6: 'synthetic', 7: 'synthetic', 8: 'synthetic' }, pricing: [29, 35] },
+  'static-vince-barclay-tennis-academy': { courtSurfaces: { 1: 'clay', 2: 'clay', 3: 'synthetic', 4: 'clay', 5: 'clay', 6: 'clay', 7: 'hard', 8: 'hard', 9: 'hard', 10: 'hard', 11: 'hard', 12: 'hard' }, pricing: [35, 35] },
+  'static-eastside-tennis-centre': { courtSurfaces: { 1: 'synthetic', 2: 'synthetic', 3: 'synthetic', 4: 'synthetic', 5: 'clay', 6: 'clay', 7: 'hard', 8: 'hard' }, pricing: [34, 39] },
+});
+
 const REALTIME_PROVIDERS = new Set([
   'susf',
   'bookable',
@@ -251,6 +286,7 @@ const STATIC_TENNIS_VENUES = Object.freeze([
     priceKnown: false,
     verificationSourceUrl: 'https://www.randwick.nsw.gov.au/facilities-and-recreation/parks/parks-by-suburb/coogee/baker-park',
     settings: ['coastal', 'scenic', 'beach_nearby'],
+    surfaces: ['synthetic'],
   },
   {
     id: 'static-langham-sydney-tennis-court',
@@ -266,6 +302,7 @@ const STATIC_TENNIS_VENUES = Object.freeze([
     verificationSourceUrl: 'https://www.langhamhotels.com/en/the-langham/sydney/wellness/tennis/',
     needsProviderFeasibility: true,
     settings: ['scenic', 'harbour', 'city_view'],
+    surfaces: ['hard'],
   },
   {
     id: 'static-mutch-park-tennis-centre',
@@ -366,6 +403,34 @@ const STATIC_TENNIS_VENUES = Object.freeze([
     priceKnown: true,
     verificationSourceUrl: 'https://www.croydontenniscentre.com.au/facilities-grass-courts',
   },
+  {
+    id: 'static-vince-barclay-tennis-academy',
+    name: 'Vince Barclay Tennis Academy',
+    suburb: 'Marsfield',
+    area: 'North Shore',
+    location: { lat: -33.76725, lng: 151.11528 },
+    officialUrl: 'https://au.racquetvenues.com/booking/vince-barclay-coaching-academy',
+    bookingCapability: 'booking_page',
+    courtCount: 12,
+    surface: null,
+    priceKnown: true,
+    verificationSourceUrl: 'https://www.tennisvenues.com.au/venue/vince-barclay-coaching-academy',
+    needsProviderFeasibility: true,
+  },
+  {
+    id: 'static-chatswood-tennis-club',
+    name: 'Chatswood Tennis Club',
+    suburb: 'Chatswood West',
+    area: 'North Shore',
+    location: { lat: -33.7967951, lng: 151.1660285 },
+    officialUrl: 'https://www.chatswoodtennis.com.au/book-a-court/',
+    bookingCapability: 'booking_page',
+    courtCount: null,
+    surface: null,
+    priceKnown: false,
+    verificationSourceUrl: 'https://www.chatswoodtennis.com.au/wp-content/uploads/2024/10/CTC-Booking-Policy.pdf',
+    needsProviderFeasibility: true,
+  },
 ]);
 
 const SUSF_CONFIGURED_VENUE = Object.freeze({
@@ -425,17 +490,36 @@ function verificationStatusForVenue(venue, override) {
   return 'unknown';
 }
 
+function canonicalSurfaceType(value) {
+  const normalized = String(value ?? '').trim().toLowerCase().replace(/[_-]+/g, ' ');
+  if (!normalized) return null;
+  if (/clay|red clay|红土/u.test(normalized)) return 'clay';
+  if (/synthetic|artificial/u.test(normalized)) return 'synthetic';
+  if (/grass|lawn/u.test(normalized)) return 'grass';
+  if (/hard|acrylic|concrete|asphalt/u.test(normalized)) return 'hard';
+  return normalized;
+}
+
 function normalizeVenue(venue, {
   source = 'provider_config',
   realtimeAvailability = REALTIME_PROVIDERS.has(venue.provider),
   overrides = {},
 } = {}) {
-  const merged = { ...venue, ...overrides };
+  const supplied = USER_SUPPLIED_COURT_METADATA[venue.id] ?? {};
+  const merged = { ...venue, ...supplied, ...overrides };
   const verificationStatus = verificationStatusForVenue(merged, overrides);
   const bookingCapability = merged.bookingCapability === undefined
     ? bookingCapabilityForProvider(merged.provider, merged)
     : merged.bookingCapability;
   const bookingUrl = bookingCapability ? merged.officialUrl ?? null : null;
+  const courtSurfaces = Object.fromEntries(Object.entries(merged.courtSurfaces ?? {})
+    .map(([court, surface]) => [String(court), canonicalSurfaceType(surface)]));
+  const surfaces = [...new Set([
+    ...(merged.surfaces ?? (merged.surface ? [merged.surface] : [])),
+    ...Object.values(courtSurfaces),
+  ]
+    .map(canonicalSurfaceType)
+    .filter(Boolean))];
   return {
     id: merged.id,
     name: merged.name,
@@ -457,7 +541,16 @@ function normalizeVenue(venue, {
     venueUrl: merged.officialUrl ?? null,
     settings: [...new Set(merged.settings ?? [])],
     courtCount: merged.courtCount ?? merged.auditCourtCount ?? null,
-    surface: merged.surface ?? null,
+    surface: surfaces[0] ?? null,
+    surfaces,
+    courtSurfaces,
+    pricing: merged.pricing ? {
+      standard: merged.pricing[0],
+      peak: merged.pricing[1],
+      currency: 'AUD',
+      source: 'user_supplied_metadata',
+    } : null,
+    pricingByCourt: merged.pricingByCourt ?? null,
     priceKnown: Boolean(merged.priceKnown ?? ['susf', 'bookable', 'sportlogic'].includes(merged.provider)),
     needsProviderFeasibility: Boolean(merged.needsProviderFeasibility ?? !realtimeAvailability),
     verificationSourceUrl: merged.verificationSourceUrl ?? merged.officialUrl ?? null,

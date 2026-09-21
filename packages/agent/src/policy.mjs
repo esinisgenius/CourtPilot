@@ -180,6 +180,7 @@ function compactFailure(error) {
     code: error?.code ?? error?.name ?? 'ERROR',
     message: error?.message ?? String(error),
     issues: Array.isArray(error?.issues) ? error.issues : [],
+    ...(error?.details ? { details: error.details } : {}),
   };
 }
 
@@ -193,6 +194,7 @@ async function chooseReplanningDecision(state, {
     failedConstraints: state.failedConstraints,
   }),
   diagnostics = evaluation,
+  observation = null,
   validateAction = (action) => validateReplanningAction(action),
 } = {}) {
   validateAgentState(state);
@@ -213,9 +215,18 @@ async function chooseReplanningDecision(state, {
   if (provider) {
     try {
       const proposedAction = await provider.choose({
+        originalRequest: state.goal,
         goal: state.goal,
+        currentState: {
+          status: state.status,
+          iteration: state.iteration,
+          preferences: state.preferences,
+          searchScope: state.searchScope,
+          previousActions: state.actionsTaken,
+        },
         preferences: state.preferences,
         searchScope: state.searchScope,
+        observation,
         diagnostics,
         previousActions: diagnostics.previousActions ?? state.actionsTaken,
         allowedActions: [...boundedRealReplanningActions],

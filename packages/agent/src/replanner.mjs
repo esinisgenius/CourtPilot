@@ -1,11 +1,15 @@
 import { applyHardConstraints } from '../../core/src/index.mjs';
 import {
+  normalizePreferenceProfile,
+  validatePreferenceProfile,
+} from '../../preferences/src/index.mjs';
+import {
   buildRankerInput,
   rankCandidates,
 } from '../../ranking/src/index.mjs';
 import { getNextRadius, getSavedPlayArea } from '../../maps/src/index.mjs';
 import { boundedRealReplanningActions, REPLANNING_ACTIONS, validateReplanningAction } from './actions.mjs';
-import { buildDiagnosticSnapshot, evaluateCandidateSet } from './evaluator.mjs';
+import { buildDiagnosticSnapshot, buildReplanningObservation, evaluateCandidateSet } from './evaluator.mjs';
 import { chooseReplanningDecision } from './policy.mjs';
 import {
   expandSearchRadius,
@@ -72,6 +76,19 @@ async function validateActionForState(state, action, {
       throw new ReplannerError(error.message, [error.message]);
     }
   }
+  if (selected === REPLANNING_ACTIONS.SEARCH_OTHER_VENUES) {
+    try {
+      expandVenueSet(current);
+    } catch (error) {
+      throw new ReplannerError(error.message, [error.message]);
+    }
+  }
+  if (selected === REPLANNING_ACTIONS.REINTERPRET_PREFERENCES) {
+    if (actionWasTaken(current, REPLANNING_ACTIONS.REINTERPRET_PREFERENCES)) {
+      throw new ReplannerError('Preference reinterpretation was already attempted without sufficient progress');
+    }
+    validatePreferencePatch(current.preferences, validated.parameters.patch);
+  }
   if (selected === REPLANNING_ACTIONS.SWITCH_SEARCH_AREA) {
     const targetAreaId = validated.parameters.targetAreaId;
     if (targetAreaId === current.searchScope?.activeAreaId
@@ -83,6 +100,148 @@ async function validateActionForState(state, action, {
     }
   }
   return validated;
+}
+
+function profileForValidation(profile = {}) {
+  const {
+    version,
+    searchWindowDays,
+    searchScope,
+    transportPreference,
+    weatherPreference,
+    preferences,
+    hardConstraints,
+    objectives,
+    unresolvedPreferences,
+    sourceText,
+    updatedAt,
+  } = profile;
+  const scope = searchScope ?? {};
+  return {
+    version,
+    searchWindowDays,
+    searchScope: {
+      days: scope.days,
+      dateRange: scope.dateRange,
+      timeWindow: scope.timeWindow,
+      location: typeof scope.location === 'string' ? scope.location : undefined,
+      sourceText: scope.sourceText,
+      source: scope.source,
+      isExplicit: scope.isExplicit,
+    },
+    transportPreference,
+    weatherPreference,
+    preferences,
+    hardConstraints,
+    objectives,
+    unresolvedPreferences,
+    sourceText,
+    updatedAt,
+  };
+}
+
+function hasHardConstraintSubset(before = [], after = []) {
+  const afterKeys = new Set(after.map((constraint) => JSON.stringify(constraint)));
+  return before.every((constraint) => afterKeys.has(JSON.stringify(constraint)));
+}
+
+function validatePreferencePatch(profile, patch) {
+  applyPreferencePatch(profile, patch);
+}
+
+function patchedTimeWindow(searchScope = {}, patch = {}) {
+  const timeWindow = { ...(searchScope.timeWindow ?? {}) };
+  if (patch.timeStart) timeWindow.after = patch.timeStart;
+  if (patch.timeEnd) timeWindow.before = patch.timeEnd;
+  return Object.keys(timeWindow).length > 0 ? timeWindow : undefined;
+}
+
+function applyPreferencePatch(profile, patch = {}) {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+    throw new ReplannerError('Preference patch must be an object');
+  }
+  const allowedKeys = new Set([
+    'timeStart',
+    'timeEnd',
+    'location',
+    'dateRange',
+    'addSoftPreference',
+    'addHardConstraint',
+  ]);
+  const unsupported = Object.keys(patch).filter((key) => !allowedKeys.has(key));
+  if (unsupported.length > 0) {
+    throw new ReplannerError('Preference patch contains unsupported fields', unsupported);
+  }
+
+  const before = profileForValidation(profile);
+  const raw = structuredClone(before);
+  raw.searchScope = {
+    ...(raw.searchScope ?? {}),
+    source: 'replanner',
+    isExplicit: true,
+    ...(patch.location ? { location: patch.location } : {}),
+    ...(patch.dateRange ? { dateRange: patch.dateRange } : {}),
+  };
+  const timeWindow = patchedTimeWindow(raw.searchScope, patch);
+  if (timeWindow) raw.searchScope.timeWindow = timeWindow;
+  if (patch.addSoftPreference) {
+    raw.preferences = [
+      ...(raw.preferences ?? []),
+      {
+        ...patch.addSoftPreference,
+        type: 'soft',
+        source: 'replanner',
+        isExplicit: false,
+      },
+    ];
+  }
+  if (patch.addHardConstraint) {
+    raw.hardConstraints = [
+      ...(raw.hardConstraints ?? []),
+      {
+        ...patch.addHardConstraint,
+        type: 'hard',
+        relaxable: false,
+        source: 'replanner',
+        isExplicit: false,
+      },
+    ];
+  }
+
+  const normalized = validatePreferenceProfile(normalizePreferenceProfile(raw, {
+    sourceText: before.sourceText,
+    updatedAt: new Date().toISOString(),
+  }));
+  if (!hasHardConstraintSubset(before.hardConstraints ?? [], normalized.hardConstraints ?? [])) {
+    throw new ReplannerError('Preference patch cannot remove existing hard constraints');
+  }
+  return {
+    ...profile,
+    ...normalized,
+    searchScope: {
+      ...(profile.searchScope ?? {}),
+      ...(normalized.searchScope ?? {}),
+    },
+  };
+}
+
+function applyPreferencePatchToState(state, patch) {
+  const preferences = applyPreferencePatch(state.preferences, patch);
+  return {
+    ...state,
+    preferences,
+    searchScope: {
+      ...state.searchScope,
+      ...(preferences.searchScope ?? {}),
+      temporalWindow: {
+        ...(state.searchScope?.temporalWindow ?? {}),
+        ...(patch.timeStart ? { timeStart: patch.timeStart } : {}),
+        ...(patch.timeEnd ? { timeEnd: patch.timeEnd } : {}),
+      },
+    },
+    candidates: [],
+    rejectedCandidates: [],
+  };
 }
 
 function validateFactualObservations(factualObservations = {}) {
@@ -209,6 +368,24 @@ async function executeReplanningAction(state, action, { savedAreasPath } = {}) {
     });
   }
 
+  if (validatedAction.selectedAction === REPLANNING_ACTIONS.SEARCH_OTHER_VENUES) {
+    const expanded = expandVenueSet(currentState);
+    return validateAgentState({
+      ...recordAction(expanded, validatedAction),
+      iteration: currentState.iteration + 1,
+      status: 'READY',
+    });
+  }
+
+  if (validatedAction.selectedAction === REPLANNING_ACTIONS.REINTERPRET_PREFERENCES) {
+    const patched = applyPreferencePatchToState(currentState, validatedAction.parameters.patch);
+    return validateAgentState({
+      ...recordAction(patched, validatedAction),
+      iteration: currentState.iteration + 1,
+      status: 'READY',
+    });
+  }
+
   if (validatedAction.selectedAction === REPLANNING_ACTIONS.SWITCH_SEARCH_AREA) {
     const targetAreaId = validatedAction.parameters.targetAreaId;
     const switched = await switchSearchArea(currentState, targetAreaId, { savedAreasPath });
@@ -258,9 +435,11 @@ function compactState(state) {
 }
 
 function assertHardConstraintsUnchanged(before, after) {
-  if (JSON.stringify(before.preferences?.hardConstraints ?? [])
-    !== JSON.stringify(after.preferences?.hardConstraints ?? [])) {
-    throw new ReplannerError('Hard constraints changed during replanning');
+  if (!hasHardConstraintSubset(
+    before.preferences?.hardConstraints ?? [],
+    after.preferences?.hardConstraints ?? [],
+  )) {
+    throw new ReplannerError('Existing hard constraints changed during replanning');
   }
 }
 
@@ -324,7 +503,7 @@ async function runReplanningLoop(initialState, {
   let observedCandidateCount = observedState.candidates.length;
   let state = applyDeterministicHardFilter(observedState);
   const iterations = [];
-  let latestRanking = { rankedCandidates: [] };
+  let latestRanking = { rankedCandidates: [], rankingMode: null };
 
   while (true) {
     if (state.iteration >= maxIterations) {
@@ -336,6 +515,7 @@ async function runReplanningLoop(initialState, {
         }),
         iterations,
         rankedCandidates: latestRanking.rankedCandidates,
+        rankingMode: latestRanking.rankingMode,
       };
     }
 
@@ -350,12 +530,18 @@ async function runReplanningLoop(initialState, {
     });
     latestRanking = rankerResult;
     const diagnostics = buildDiagnosticSnapshot(state, evaluation, { observedCandidateCount });
+    const observation = buildReplanningObservation(state, {
+      evaluation,
+      diagnostics,
+      observedCandidateCount,
+    });
     const stateBefore = compactState(state);
     const decision = await chooseReplanningDecision(state, {
       provider,
       maxIterations,
       evaluation,
       diagnostics,
+      observation,
       validateAction: (action) => validateActionForState(state, action, {
         evaluation,
         savedAreasPath,
@@ -375,6 +561,7 @@ async function runReplanningLoop(initialState, {
       reason: action.rationale,
       validationFailure: decision.validationFailure,
       diagnosticsSummary: diagnostics,
+      observation,
       stateBefore,
       stateAfter: compactState(nextState),
       evaluation,
@@ -389,6 +576,7 @@ async function runReplanningLoop(initialState, {
         state: nextState,
         iterations,
         rankedCandidates: latestRanking.rankedCandidates,
+        rankingMode: latestRanking.rankingMode,
       };
     }
 
@@ -407,6 +595,7 @@ export {
   evaluateReplanningContext,
   executeReplanningAction,
   evaluateCurrentCandidateSet,
+  applyPreferencePatch,
   runReplanningLoop,
   validateBoundedRealReplanningAction,
   validateActionForState,

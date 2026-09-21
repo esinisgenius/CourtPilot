@@ -508,7 +508,8 @@ function relevantFacts(candidate) {
   if (candidate.preferredTime === true) facts.push('Preferred time');
   const weather = formatWeatherValue(candidate.weather);
   if (weather) facts.push(weather);
-  return facts.slice(0, 4).map((label) => ({ label, warning: false }));
+  facts.push(...surfaceLabels(candidate.surfaces ?? (candidate.surface ? [candidate.surface] : [])));
+  return facts.map((label) => ({ label, warning: false }));
 }
 
 function weatherWarningLabel(candidate) {
@@ -528,7 +529,7 @@ function cardFactChips(candidate) {
   const facts = relevantFacts(candidate);
   const warning = weatherWarningLabel(candidate);
   if (warning) facts.unshift({ label: warning, warning: true });
-  return facts.slice(0, 5);
+  return facts;
 }
 
 function bookingProvider(booking) {
@@ -584,7 +585,6 @@ function renderCandidateCard(candidate, isBest = false) {
   const price = formatPriceValue(candidate.price);
   const weather = formatWeatherValue(candidate.weather);
   const lowerLine = [
-    candidate.surface,
     price,
     weather,
   ].filter(Boolean).join(' · ');
@@ -656,15 +656,25 @@ function availabilityLabel(venue) {
   return 'Live availability pending';
 }
 
+function surfaceLabels(surfaces = []) {
+  const labels = {
+    clay: 'Clay Court',
+    grass: 'Grass Court',
+    hard: 'Hard Court',
+    synthetic: 'Synthetic Court',
+  };
+  return [...new Set(surfaces)].map((surface) => labels[surface] ?? surface);
+}
+
 function renderNearbyCourts(response) {
   const nearby = response.nearbyCourts ?? response.nearbyVenues ?? [];
   nearbySection.style.display = nearby.length ? '' : 'none';
   nearbyCards.innerHTML = nearby.slice(0, 5).map((venue) => {
+    const surfaceFacts = surfaceLabels(venue.surfaces ?? (venue.surface ? [venue.surface] : []));
     const meta = [
       venue.suburb ?? venue.area,
       formatDistance(venue.distanceKm),
       venue.courtCount ? `${venue.courtCount} courts` : null,
-      venue.surface,
       availabilityLabel(venue),
     ].filter(Boolean);
     return `
@@ -675,6 +685,7 @@ function renderNearbyCourts(response) {
           <div class="nearby-meta">
             ${meta.map((item) => `<span>${escapeHtml(item)}</span>`).join('')}
           </div>
+          ${surfaceFacts.length ? `<div class="facts nearby-facts">${surfaceFacts.map((label) => `<span class="fact-chip">✓ ${escapeHtml(label)}</span>`).join('')}</div>` : ''}
         </div>
         ${venue.booking?.url ? renderBookingAction(venue.booking, null, 'nearby') : renderVenueAction(venue.venueUrl)}
       </article>

@@ -12,8 +12,13 @@ function buildCandidateRankerMessages(rankerInput) {
     {
       role: 'system',
       content: [
-        'You are a bounded tennis candidate ranker.',
-        'Rank only the provided hard-filtered candidates using the user soft preferences.',
+        'You are a bounded listwise tennis recommendation ranker.',
+        `The first ${rankerInput.slateSize} ranked candidates form one recommendation slate, so optimize them jointly rather than scoring candidates independently.`,
+        'Each slate candidate must be a strong individual match and add meaningful decision value beyond candidates ranked before it.',
+        'Infer useful comparison dimensions from the user preferences and supplied facts, including venue, court, surface, time, price, accessibility, weather, and continuous availability when relevant.',
+        'Avoid near-duplicate choices that add little information, but do not diversify for appearance or promote a substantially worse candidate merely because it is different.',
+        'When the feasible candidates are genuinely similar, preserve quality and state the limited marginal value instead of inventing differences.',
+        'Rank every provided candidate exactly once. For each candidate, explain individual reasons, tradeoffs, and marginalValue relative to earlier selections.',
         'Use only factual candidate fields in the input. Do not estimate or invent price, time, distance, weather, availability, court, or venue facts.',
         'Do not add candidates, remove candidates, change candidate ids, relax hard constraints, or propose replanning actions.',
         'Return strict JSON matching the provided schema.',
@@ -47,8 +52,9 @@ async function rankCandidates({
   candidates = [],
   provider = null,
   timeoutMs = defaultTimeoutMs,
+  slateSize = 3,
 } = {}) {
-  const input = buildRankerInput({ preferenceProfile, candidates });
+  const input = buildRankerInput({ preferenceProfile, candidates, slateSize });
   if (input.candidates.length === 0) return { rankedCandidates: [] };
 
   if (!provider) {
@@ -62,10 +68,13 @@ async function rankCandidates({
       responseSchema: rankerOutputJsonSchema,
     };
     const rawOutput = await withTimeout(Promise.resolve(providerCall(provider, payload)), timeoutMs);
-    return validateRankerOutput(rawOutput, {
-      candidateFacts: input.candidates,
-      preferenceProfile,
-    });
+    return {
+      ...validateRankerOutput(rawOutput, {
+        candidateFacts: input.candidates,
+        preferenceProfile,
+      }),
+      rankingMode: 'llm_slate',
+    };
   } catch {
     return fallbackRankCandidates({ preferenceProfile, candidates });
   }

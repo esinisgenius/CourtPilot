@@ -58,7 +58,7 @@ test('canonical venue inventory separates static coverage from realtime availabi
   const venues = canonicalVenueInventory();
   const summary = venueInventorySummary(venues);
   assert.equal(summary.verifiedVenues >= 30, true);
-  assert.equal(summary.verifiedVenues <= 50, true);
+  assert.equal(summary.verifiedVenues <= 60, true);
   assert.equal(summary.realtimeVenues < summary.verifiedVenues, true);
 
   const ids = new Set();
@@ -82,4 +82,41 @@ test('canonical venue inventory separates static coverage from realtime availabi
       assert.equal(['susf', 'bookable', 'clubspark', 'intrac', 'mindbody', 'sportlogic', 'unified-bookings'].includes(venue.provider), true);
     }
   }
+});
+
+test('canonical venue inventory preserves supplied venue and court surface metadata', () => {
+  const venues = new Map(canonicalVenueInventory().map((venue) => [venue.id, venue]));
+
+  const susf = venues.get('susf-tennis');
+  assert.deepEqual(susf.surfaces, ['hard', 'synthetic']);
+  assert.equal(susf.courtSurfaces['1'], 'hard');
+  assert.equal(susf.courtSurfaces['4'], 'synthetic');
+  assert.deepEqual(susf.pricingByCourt['4'], [29, 34]);
+
+  const centennial = venues.get('intrac-centennial-parklands-sports-centre');
+  assert.deepEqual(centennial.surfaces, ['synthetic', 'hard']);
+  assert.equal(centennial.courtSurfaces['10'], 'hard');
+
+  const meadowbank = venues.get('sportlogic-meadowbank-park-tennis-centre');
+  assert.equal(meadowbank.realtimeAvailability, true);
+  assert.deepEqual(meadowbank.surfaces, ['clay', 'synthetic']);
+  assert.equal(meadowbank.courtSurfaces['3'], 'clay');
+  assert.equal(meadowbank.courtSurfaces['5'], 'synthetic');
+  assert.deepEqual(meadowbank.pricing, {
+    standard: 29,
+    peak: 35,
+    currency: 'AUD',
+    source: 'user_supplied_metadata',
+  });
+
+  const vinceBarclay = venues.get('static-vince-barclay-tennis-academy');
+  assert.equal(vinceBarclay.realtimeAvailability, false);
+  assert.deepEqual(vinceBarclay.surfaces, ['clay', 'synthetic', 'hard']);
+  assert.equal(vinceBarclay.courtSurfaces['3'], 'synthetic');
+  assert.equal(vinceBarclay.courtSurfaces['12'], 'hard');
+
+  const eastside = venues.get('static-eastside-tennis-centre');
+  assert.deepEqual(eastside.surfaces, ['synthetic', 'clay', 'hard']);
+  assert.equal(eastside.courtSurfaces['5'], 'clay');
+  assert.equal(eastside.courtSurfaces['7'], 'hard');
 });
