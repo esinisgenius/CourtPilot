@@ -103,7 +103,7 @@ function mockFetch({ fragment = fixtureFragment, wafChallenge = false } = {}) {
 }
 
 test('SportLogic default registry contains Burwood production metadata', () => {
-  assert.equal(DEFAULT_SPORTLOGIC_VENUES.length, 7);
+  assert.equal(DEFAULT_SPORTLOGIC_VENUES.length, 8);
   const venue = DEFAULT_SPORTLOGIC_VENUES.find((item) => item.id === 'sportlogic-burwood-tennis-courts');
   assert.equal(venue.provider, 'sportlogic');
   assert.equal(venue.name, 'Burwood Tennis Courts');
@@ -126,6 +126,13 @@ test('SportLogic default registry contains Burwood production metadata', () => {
   assert.equal(northShore.length, 4);
   assert.equal(northShore.every((item) => item.surfaces.includes('synthetic')), true);
   assert.equal(northShore.every((item) => item.officialUrl.startsWith('https://www.tennisvenues.com.au/booking/')), true);
+});
+
+test('SportLogic registry includes the Macquarie University tennis operator', () => {
+  const venue = DEFAULT_SPORTLOGIC_VENUES.find((item) => item.id === 'sportlogic-vince-barclay-tennis-academy');
+  assert.equal(venue?.suburb, 'Marsfield');
+  assert.equal(venue?.auditCourtCount, 12);
+  assert.match(venue?.officialUrl ?? '', /vince-barclay-coaching-academy/);
 });
 
 test('SportLogic discovery reads client id from public booking URL', () => {

@@ -55,6 +55,17 @@ const CANONICAL_LOCATIONS = Object.freeze([
     nearbyWeatherLocations: ['sydney-cbd'],
     confidence: 'high',
   },
+  {
+    id: 'macquarie-university',
+    canonicalName: 'Macquarie University',
+    kind: 'landmark',
+    aliases: ['macquarie university', 'macquarie uni', 'mq university', '麦考瑞大学', '麦考瑞大学附近'],
+    center: { lat: -33.7738, lng: 151.1126 },
+    radiusMeters: 4000,
+    weatherRegion: 'north-west-sydney',
+    nearbyWeatherLocations: ['sydney-cbd'],
+    confidence: 'high',
+  },
 ]);
 
 function normalizeLocationQuery(text = '') {

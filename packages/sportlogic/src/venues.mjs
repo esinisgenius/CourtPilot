@@ -114,6 +114,22 @@ const DEFAULT_SPORTLOGIC_VENUES = Object.freeze([
     auditCourtCount: 6,
     surfaces: ['synthetic'],
   },
+  {
+    id: 'sportlogic-vince-barclay-tennis-academy',
+    name: 'Vince Barclay Tennis Academy',
+    suburb: 'Marsfield',
+    address: 'Cnr Culloden and Talavera Rd, Marsfield NSW 2122',
+    location: { lat: -33.76725, lng: 151.11528 },
+    geoSource: 'macquarie_university_official_venue_page',
+    geoConfidence: 'high',
+    provider: 'sportlogic',
+    sport: 'tennis',
+    officialUrl: 'https://au.racquetvenues.com/booking/vince-barclay-coaching-academy',
+    clientId: 'vince-barclay-coaching-academy',
+    enabled: true,
+    auditCourtCount: 12,
+    surfaces: ['clay', 'hard', 'synthetic'],
+  },
 ]);
 
 export {
