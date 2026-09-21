@@ -112,7 +112,15 @@ function parseBootstrapMetadata(html, venue) {
 }
 
 async function bootstrapAnonymousSession(venue, { signal = null } = {}) {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    headless: true,
+    args: [
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--no-zygote',
+      '--single-process',
+    ],
+  });
   const abortHandler = () => {
     browser.close().catch(() => {});
   };
@@ -124,6 +132,10 @@ async function bootstrapAnonymousSession(venue, { signal = null } = {}) {
 
   try {
     const page = await context.newPage();
+    await page.route('**/*', (route) => {
+      const type = route.request().resourceType();
+      return ['image', 'font', 'media'].includes(type) ? route.abort() : route.continue();
+    });
     await page.goto(venue.officialUrl, { waitUntil: 'networkidle', timeout: 60000 });
     const html = await page.content();
     const cookies = await context.cookies();

@@ -659,13 +659,25 @@ async function readSusfAvailability({
     maxAgeMs: metadataCacheTtlMs,
   });
 
-  const browser = await chromium.launch({ headless });
+  const browser = await chromium.launch({
+    headless,
+    args: [
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--no-zygote',
+      '--single-process',
+    ],
+  });
   const abortHandler = () => {
     browser.close().catch(() => {});
   };
   if (signal) signal.addEventListener('abort', abortHandler, { once: true });
   const context = await browser.newContext();
   const page = await context.newPage();
+  await page.route('**/*', (route) => {
+    const type = route.request().resourceType();
+    return ['image', 'font', 'media'].includes(type) ? route.abort() : route.continue();
+  });
 
   try {
     const facilityListUrl = await navigateToTennisFacilityList(page, normalizedBookingUrl);
