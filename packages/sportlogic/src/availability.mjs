@@ -193,7 +193,7 @@ async function fetchAvailabilityFragment({ url, cookieHeader, fetchImpl = fetch,
 }
 
 function parseCourtHeaders(fragment) {
-  return [...String(fragment).matchAll(/<th\b([^>]*)class=["'][^"']*\bv4-court-col\b[^"']*["']([^>]*)>([\s\S]*?)<\/th>/gi)]
+  const v4Courts = [...String(fragment).matchAll(/<th\b([^>]*)class=["'][^"']*\bv4-court-col\b[^"']*["']([^>]*)>([\s\S]*?)<\/th>/gi)]
     .map((match) => {
       const attrs = `${match[1]} ${match[2]}`;
       const index = attrs.match(/data-court-index=["']?(\d+)["']?/i)?.[1];
@@ -203,6 +203,10 @@ function parseCourtHeaders(fragment) {
       };
     })
     .filter((court) => Number.isInteger(court.index) && court.name.length > 0);
+  if (v4Courts.length > 0) return v4Courts;
+  return [...String(fragment).matchAll(/<td\b[^>]*class=["'][^"']*\bBookingSheetCategoryLabel\b[^"']*["'][^>]*>([\s\S]*?)<\/td>/gi)]
+    .map((match, index) => ({ index, name: stripTags(match[1]) }))
+    .filter((court) => court.name.length > 0);
 }
 
 function parseAvailableLinks(fragment) {
@@ -228,13 +232,31 @@ function parseAvailableLinks(fragment) {
       href,
     });
   }
+  if (links.length > 0) return links;
+  for (const anchorMatch of String(fragment).matchAll(/<a\b[^>]*href=["']([^"']*\/booking\/request[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    const href = decodeHtml(anchorMatch[1]);
+    const url = new URL(href, 'https://www.tennisvenues.com.au');
+    const courtId = url.searchParams.get('id');
+    const date = url.searchParams.get('d');
+    const time = url.searchParams.get('t');
+    const courtNumber = courtId?.match(/(\d+)$/)?.[1];
+    if (!courtId || !date || !time || !courtNumber) continue;
+    links.push({
+      courtIndex: Number(courtNumber) - 1,
+      courtId,
+      date: expandCompactDate(date),
+      time,
+      label: stripTags(anchorMatch[2]),
+      href,
+    });
+  }
   return links;
 }
 
 function parseGridFragment(fragment) {
   const courts = parseCourtHeaders(fragment);
   if (courts.length === 0) {
-    throw new SportLogicAvailabilityError('SPORTLOGIC_MALFORMED_RESPONSE', 'SportLogic availability fragment did not contain v4 court headers');
+    throw new SportLogicAvailabilityError('SPORTLOGIC_MALFORMED_RESPONSE', 'SportLogic availability fragment did not contain recognized court headers');
   }
   return {
     courts,

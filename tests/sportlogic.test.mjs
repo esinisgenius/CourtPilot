@@ -166,6 +166,26 @@ test('SportLogic availability URL uses public v4 HTML fragment endpoint', () => 
   }).replace(/_=\d+$/, '_=CACHE'), 'https://www.tennisvenues.com.au/booking/fixture-courts/fetch-booking-data?client_id=fixture-courts&venue_id=1&resource_id=&date=20260904&view=v4&_=CACHE');
 });
 
+test('SportLogic parser supports the legacy RacquetVenues booking table', () => {
+  const grid = parseGridFragment(`
+    <td class="BookingSheetCategoryLabel">Court 1 - Green Clay</td>
+    <td class="BookingSheetCategoryLabel">Court 2 - Swiss Clay</td>
+    <td class="TimeCell Available"><a href="/booking/request?v=vince&id=C2&d=20260922&t=1730&cm=true">5:30pm</a></td>
+  `);
+  assert.deepEqual(grid.courts, [
+    { index: 0, name: 'Court 1 - Green Clay' },
+    { index: 1, name: 'Court 2 - Swiss Clay' },
+  ]);
+  assert.deepEqual(grid.availableLinks[0], {
+    courtIndex: 1,
+    courtId: 'C2',
+    date: '2026-09-22',
+    time: '1730',
+    label: '5:30pm',
+    href: '/booking/request?v=vince&id=C2&d=20260922&t=1730&cm=true',
+  });
+});
+
 test('SportLogic parses court headers and available booking links from grid HTML', () => {
   assert.deepEqual(parseGridFragment(fixtureFragment), {
     courts: [
