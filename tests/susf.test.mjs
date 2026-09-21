@@ -17,6 +17,7 @@ import {
   prepareAvailabilityRequest,
   toPublicAvailability,
 } from '../packages/susf/src/index.mjs';
+import { createPublicHttpSession, verificationTokenFromHtml } from '../packages/susf/src/public-client.mjs';
 
 test('builds a stable provider court page from the configured SUSF booking URL', () => {
   const url = buildCourtBookingUrl(
@@ -179,6 +180,34 @@ test('availability request construction fails when public anti-forgery token is 
     daysCount: 7,
     durationMinutes: 60,
   }), /Missing public anti-forgery token/);
+});
+
+test('public HTTP session extracts anti-forgery token and cookies without Chromium', async () => {
+  const calls = [];
+  const session = await createPublicHttpSession('https://example.test/booking', {
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return {
+        ok: true,
+        url,
+        headers: { getSetCookie: () => ['PMSessionId=session; Path=/; HttpOnly', 'ClusterId=default; Path=/'] },
+        async text() {
+          return '<input name="__RequestVerificationToken" type="hidden" value="public-token">';
+        },
+      };
+    },
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(session.token, 'public-token');
+  assert.equal(session.cookie, 'PMSessionId=session; ClusterId=default');
+});
+
+test('verification token extraction supports value-before-name markup', () => {
+  assert.equal(
+    verificationTokenFromHtml('<input value="token-two" type="hidden" name="__RequestVerificationToken">'),
+    'token-two',
+  );
 });
 
 test('availability request construction fails when required runtime metadata is unavailable', () => {

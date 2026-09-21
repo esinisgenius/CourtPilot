@@ -333,10 +333,67 @@ async function fetchAvailabilityJson(page, request) {
   }, request);
 }
 
+function cookiesFromHeaders(headers) {
+  const values = typeof headers.getSetCookie === 'function'
+    ? headers.getSetCookie()
+    : [headers.get('set-cookie')].filter(Boolean);
+  return values.map((value) => value.split(';', 1)[0]).join('; ');
+}
+
+function verificationTokenFromHtml(html) {
+  return String(html).match(/name=["']__RequestVerificationToken["'][^>]*value=["']([^"']+)["']/i)?.[1]
+    ?? String(html).match(/value=["']([^"']+)["'][^>]*name=["']__RequestVerificationToken["']/i)?.[1]
+    ?? null;
+}
+
+async function createPublicHttpSession(pageUrl, { fetchImpl = fetch, signal = null } = {}) {
+  const response = await fetchImpl(pageUrl, {
+    headers: {
+      accept: 'text/html,application/xhtml+xml',
+      'user-agent': 'CourtPilot availability collector/1.0',
+    },
+    redirect: 'follow',
+    signal,
+  });
+  if (!response.ok) throw new Error(`SUSF public page returned HTTP ${response.status}`);
+  const html = await response.text();
+  const token = verificationTokenFromHtml(html);
+  if (!token) throw new Error('Missing public anti-forgery token from SUSF page.');
+  return {
+    token,
+    cookie: cookiesFromHeaders(response.headers),
+    pageUrl: response.url || pageUrl,
+  };
+}
+
+async function fetchAvailabilityJsonHttp(session, request, { fetchImpl = fetch, signal = null } = {}) {
+  const origin = new URL(session.pageUrl).origin;
+  const response = await fetchImpl(request.url, {
+    method: request.method,
+    headers: {
+      ...request.headers,
+      cookie: session.cookie,
+      origin,
+      referer: session.pageUrl,
+    },
+    body: request.body,
+    signal,
+  });
+  if (!response.ok) throw new Error(`FacilityAvailability returned HTTP ${response.status}`);
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!/json/i.test(contentType)) {
+    throw new Error(`FacilityAvailability returned non-JSON content (${contentType || 'unknown'})`);
+  }
+  return response.json();
+}
+
 export {
   createAvailabilityCapture,
+  createPublicHttpSession,
   fetchAvailabilityJson,
+  fetchAvailabilityJsonHttp,
   getVerificationToken,
   prepareAvailabilityRequest,
   sanitizeCapturedAvailabilityRequest,
+  verificationTokenFromHtml,
 };

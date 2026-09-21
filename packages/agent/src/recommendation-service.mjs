@@ -994,6 +994,9 @@ function serializeCandidate(entry, index = entry.ranking.rank - 1, {
       nextHourAlsoAvailable: candidate.features?.nextHourFree ?? null,
       source: candidate.source?.availability?.source ?? candidate.source?.canonicalAvailability?.provenance?.source ?? null,
       provider: candidate.source?.provider ?? null,
+      observedAt: candidate.source?.availability?.observedAt
+        ?? candidate.source?.canonicalAvailability?.provenance?.observedAt
+        ?? null,
     },
     price: {
       amount: candidate.features?.price ?? null,

@@ -9,6 +9,7 @@ export {
   extractRateTableFromHtml,
   extractSerializedPriceArrays,
   normalizeAvailability,
+  readSusfAvailabilityWithHttp,
   findCourtFacilities,
   getSusfAvailability,
   isAvailabilityTriggerText,
@@ -19,7 +20,10 @@ export {
 } from './availability.mjs';
 
 export {
+  createPublicHttpSession,
+  fetchAvailabilityJsonHttp,
   prepareAvailabilityRequest,
+  verificationTokenFromHtml,
 } from './public-client.mjs';
 
 export {

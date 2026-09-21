@@ -1,6 +1,5 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { chromium } from 'playwright';
 import {
   canonicalAvailability,
   legacyAvailabilityFromCanonical,
@@ -16,7 +15,9 @@ import {
 } from './discovery.mjs';
 import {
   createAvailabilityCapture,
+  createPublicHttpSession,
   fetchAvailabilityJson,
+  fetchAvailabilityJsonHttp,
   getVerificationToken,
   prepareAvailabilityRequest,
   sanitizeCapturedAvailabilityRequest,
@@ -24,7 +25,7 @@ import {
 
 const DEFAULT_BOOKING_URL = 'https://susf.perfectmind.com/39161/Clients/BookMe4FacilityList/List?calendarId=7cb1945d-e899-4e40-96c4-8ee784ccfc2d&widgetId=c5b8cc8a-09fe-48ae-a693-df5c09f81adb&embed=False';
 const DEFAULT_CAPTURE_TIMEOUT_MS = 120_000;
-const DEFAULT_METADATA_CACHE_PATH = resolve('.cache/susf-metadata.json');
+const DEFAULT_METADATA_CACHE_PATH = resolve('config/susf-public-metadata.json');
 const DEFAULT_METADATA_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_AVAILABILITY_CACHE_TTL_MS = 10 * 60 * 1000;
 const SUSF_METADATA_CACHE_VERSION = 1;
@@ -98,18 +99,17 @@ function availabilityCacheKey({
   });
 }
 
-function readAvailabilityCache(key, ttlMs = DEFAULT_AVAILABILITY_CACHE_TTL_MS) {
+function readAvailabilityCache(key, ttlMs = DEFAULT_AVAILABILITY_CACHE_TTL_MS, { allowStale = false } = {}) {
   const cached = availabilityCache.get(key);
   if (!cached) return null;
-  if (Date.now() - cached.createdAtMs > ttlMs) {
-    availabilityCache.delete(key);
-    return null;
-  }
+  const stale = Date.now() - cached.createdAtMs > ttlMs;
+  if (stale && !allowStale) return null;
   const availability = cloneAvailability(cached.availability);
   availability.discovery = {
     ...(availability.discovery ?? {}),
-    cache: 'availability_memory',
+    cache: stale ? 'stale_last_success' : 'availability_memory',
     cachedAt: cached.createdAt,
+    stale,
   };
   return availability;
 }
@@ -375,6 +375,18 @@ async function readMetadataCache(filePath, options) {
   }
 }
 
+async function readMetadataSnapshot(filePath, { bookingUrl } = {}) {
+  if (!filePath) return null;
+  try {
+    const cache = JSON.parse(await readFile(filePath, 'utf8'));
+    if (cache?.version !== SUSF_METADATA_CACHE_VERSION || cache.bookingUrl !== bookingUrl) return null;
+    if (!Array.isArray(cache.courts) || cache.courts.length === 0) return null;
+    return cache;
+  } catch {
+    return null;
+  }
+}
+
 async function writeMetadataCache(filePath, cache) {
   if (!filePath) return;
   await mkdir(dirname(filePath), { recursive: true });
@@ -631,6 +643,51 @@ async function readSusfAvailabilityWithCachedMetadata({
   });
 }
 
+async function readSusfAvailabilityWithHttp({
+  cache,
+  date,
+  days,
+  durationMinutes,
+  signal = null,
+  fetchImpl = fetch,
+}) {
+  const session = await createPublicHttpSession(cache.bookingUrl, { fetchImpl, signal });
+  const rows = [];
+
+  for (const court of cache.courts) {
+    if (signal?.aborted) throw signal.reason ?? new Error('SUSF availability acquisition was cancelled.');
+    const request = prepareAvailabilityRequest(court.captured, {
+      facilityId: court.facilityId,
+      date,
+      token: session.token,
+      daysCount: days,
+      durationMinutes,
+    });
+    const responseJson = await fetchAvailabilityJsonHttp(session, request, { fetchImpl, signal });
+    const observedAt = new Date().toISOString();
+    rows.push(...normalizeAvailability(responseJson, court.court, { durationMinutes })
+      .map((row) => ({
+        ...row,
+        facilityId: court.facilityId,
+        price_options: court.priceOptions ?? [],
+        observedAt,
+        officialUrl: cache.bookingUrl,
+        bookingUrl: buildCourtBookingUrl(cache.bookingUrl, court.facilityId),
+      })));
+  }
+
+  return availabilityFromRows(rows, {
+    durationMinutes,
+    discovery: {
+      facilityCount: cache.courts.length,
+      courtCount: cache.courts.length,
+      source: 'public_http',
+      checkedAt: new Date().toISOString(),
+      stale: false,
+    },
+  });
+}
+
 async function readSusfAvailability({
   bookingUrl = process.env.SUSF_BOOKING_URL ?? DEFAULT_BOOKING_URL,
   date = todayIsoDate(),
@@ -643,6 +700,9 @@ async function readSusfAvailability({
   metadataCacheTtlMs = Number(process.env.SUSF_METADATA_CACHE_TTL_MS ?? DEFAULT_METADATA_CACHE_TTL_MS),
   availabilityCacheTtlMs = Number(process.env.SUSF_AVAILABILITY_CACHE_TTL_MS ?? DEFAULT_AVAILABILITY_CACHE_TTL_MS),
   forceDiscovery = process.env.SUSF_FORCE_DISCOVERY === '1',
+  forceRefresh = false,
+  allowBrowserDiscovery = process.env.SUSF_ALLOW_BROWSER_DISCOVERY === '1',
+  fetchImpl = fetch,
 } = {}) {
   const normalizedBookingUrl = normalizeConfiguredUrl(bookingUrl);
   const cacheKey = availabilityCacheKey({
@@ -651,14 +711,42 @@ async function readSusfAvailability({
     days,
     durationMinutes,
   });
-  const cachedAvailability = readAvailabilityCache(cacheKey, availabilityCacheTtlMs);
+  const cachedAvailability = forceRefresh ? null : readAvailabilityCache(cacheKey, availabilityCacheTtlMs);
   if (cachedAvailability) return cachedAvailability;
 
-  const metadataCache = forceDiscovery ? null : await readMetadataCache(metadataCachePath, {
+  const metadataCache = forceDiscovery ? null : await readMetadataSnapshot(metadataCachePath, {
     bookingUrl: normalizedBookingUrl,
-    maxAgeMs: metadataCacheTtlMs,
   });
 
+  if (metadataCache) {
+    try {
+      const availability = await readSusfAvailabilityWithHttp({
+        cache: metadataCache,
+        date,
+        days,
+        durationMinutes,
+        signal,
+        fetchImpl,
+      });
+      writeAvailabilityCache(cacheKey, availability);
+      return availability;
+    } catch (error) {
+      const stale = readAvailabilityCache(cacheKey, availabilityCacheTtlMs, { allowStale: true });
+      if (stale) {
+        stale.discovery = {
+          ...(stale.discovery ?? {}),
+          refreshError: error.message,
+        };
+        return stale;
+      }
+      if (!allowBrowserDiscovery) throw error;
+      console.warn(`SUSF public HTTP refresh failed; falling back to browser discovery: ${error.message}`);
+    }
+  } else if (!allowBrowserDiscovery) {
+    throw new Error(`SUSF public metadata snapshot is unavailable at ${metadataCachePath}`);
+  }
+
+  const { chromium } = await import('playwright');
   const browser = await chromium.launch({
     headless,
     args: [
@@ -865,6 +953,7 @@ export {
   normalizeRateTableFromPriceArrays,
   selectSusfSlotPrice,
   normalizeAvailability,
+  readSusfAvailabilityWithHttp,
   readSusfAvailability,
   toPublicAvailability,
 };

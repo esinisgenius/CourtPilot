@@ -583,6 +583,15 @@ function formatTimeRange(candidate) {
   return `${date ? `${date}, ` : ''}${time} · ${duration} min`;
 }
 
+function freshnessLabel(candidate) {
+  const observedAt = Date.parse(candidate.availability?.observedAt ?? '');
+  if (!Number.isFinite(observedAt)) return null;
+  const minutes = Math.max(0, Math.floor((Date.now() - observedAt) / 60000));
+  if (minutes < 1) return 'Checked just now';
+  if (minutes === 1) return 'Checked 1 minute ago';
+  return `Checked ${minutes} minutes ago`;
+}
+
 function courtThumbText(candidate) {
   const venue = candidate.venue ? String(candidate.venue).split(/\s+/).slice(0, 2).join(' ') : 'Court';
   const court = candidate.court ?? '';
@@ -655,6 +664,9 @@ function renderBookingAction(booking, candidate = null, context = 'candidate') {
     `data-start-time="${escapeHtml(candidate.startTime)}"`,
     `data-duration-minutes="${escapeHtml(candidate.durationMinutes)}"`,
     `data-booking-provider="${escapeHtml(bookingProvider(booking) ?? '')}"`,
+    `data-availability-provider="${escapeHtml(candidate.availability?.provider ?? '')}"`,
+    `data-local-date="${escapeHtml(candidate.localDate ?? '')}"`,
+    `data-local-time="${escapeHtml(candidate.localTime ?? '')}"`,
   ].join(' ') : '';
   return `
     <a class="book-link" href="${escapeHtml(booking.url)}" target="_blank" rel="noopener noreferrer" ${behaviorAttrs}>
@@ -668,6 +680,7 @@ function renderCandidateCard(candidate, isBest = false) {
     candidate.court,
     formatCandidateDistances(candidate),
     formatTimeRange(candidate),
+    freshnessLabel(candidate),
   ].filter(Boolean);
   const price = formatPriceValue(candidate.price);
   const weather = formatWeatherValue(candidate.weather);
@@ -1040,7 +1053,7 @@ editProfileButtons.forEach((button) => {
 
 searchAgainButton.addEventListener('click', handleSearchAgain);
 
-document.addEventListener('click', (event) => {
+document.addEventListener('click', async (event) => {
   const link = event.target.closest('[data-behavior="booking-click"]');
   if (!link) return;
   appendBehavior('recentBookingClicks', {
@@ -1057,6 +1070,36 @@ document.addEventListener('click', (event) => {
     bookingProvider: link.dataset.bookingProvider || null,
     hasStartTime: Boolean(link.dataset.startTime),
   });
+
+  if (link.dataset.availabilityProvider === 'susf') {
+    event.preventDefault();
+    const target = window.open('about:blank', '_blank');
+    try {
+      const response = await fetch('/api/revalidate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'susf',
+          court: link.dataset.court,
+          localDate: link.dataset.localDate,
+          localTime: link.dataset.localTime,
+          durationMinutes: Number(link.dataset.durationMinutes) || 60,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.error?.message ?? 'Availability check failed.');
+      if (!result.available && !result.stale) {
+        target?.close();
+        window.alert('This slot changed on the official booking site and is no longer available. Search again for fresh options.');
+        return;
+      }
+      if (target) target.location.href = link.href;
+      else window.location.href = link.href;
+    } catch {
+      if (target) target.location.href = link.href;
+      else window.location.href = link.href;
+    }
+  }
 });
 
 window.CourtPilotStorage = {

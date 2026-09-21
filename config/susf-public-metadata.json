@@ -1,0 +1,186 @@
+{
+  "version": 1,
+  "bookingUrl": "https://susf.perfectmind.com/39161/Clients/BookMe4FacilityList/List?calendarId=7cb1945d-e899-4e40-96c4-8ee784ccfc2d&widgetId=c5b8cc8a-09fe-48ae-a693-df5c09f81adb&embed=False",
+  "facilityListUrl": "https://susf.perfectmind.com/39161/Clients/BookMe4FacilityList/List?calendarId=7cb1945d-e899-4e40-96c4-8ee784ccfc2d&widgetId=c5b8cc8a-09fe-48ae-a693-df5c09f81adb&embed=False",
+  "createdAt": "2026-09-21T07:15:45.894Z",
+  "courts": [
+    {
+      "court": "Court 1",
+      "domLabel": "Tennis Hard Court 1",
+      "facilityId": "0867c749-799a-4179-b5e7-6e167366c02c",
+      "captured": {
+        "url": "https://susf.perfectmind.com/39161/Clients/BookMe4LandingPages/FacilityAvailability",
+        "method": "POST",
+        "headers": {
+          "x-requested-with": "XMLHttpRequest",
+          "accept": "application/json, text/javascript, */*; q=0.01",
+          "content-type": "application/x-www-form-urlencoded; charset=UTF-8"
+        },
+        "postData": "facilityId=0867c749-799a-4179-b5e7-6e167366c02c&date=2026-09-21T17%3A15%3A02.888Z&daysCount=7&duration=60&serviceId=cfdea38b-9ad8-4b8b-be51-c3c58d056300&durationIds%5B%5D=9f7419bf-944d-46b6-96ae-96f9369f29c8&durationIds%5B%5D=59d79890-1ed0-4af1-9fd9-f53923ddc8d1&__RequestVerificationToken=__TOKEN__"
+      },
+      "priceOptions": [
+        {
+          "name": "Tennis Peak Fee",
+          "amount": 50,
+          "currency": "AUD",
+          "durationMinutes": 60
+        },
+        {
+          "name": "Tennis Off-Peak Fee",
+          "amount": 39,
+          "currency": "AUD",
+          "durationMinutes": 60
+        }
+      ]
+    },
+    {
+      "court": "Court 2",
+      "domLabel": "Tennis Hard Court 2",
+      "facilityId": "2e554328-7850-44c3-95ee-281593d4cbe7",
+      "captured": {
+        "url": "https://susf.perfectmind.com/39161/Clients/BookMe4LandingPages/FacilityAvailability",
+        "method": "POST",
+        "headers": {
+          "x-requested-with": "XMLHttpRequest",
+          "accept": "application/json, text/javascript, */*; q=0.01",
+          "content-type": "application/x-www-form-urlencoded; charset=UTF-8"
+        },
+        "postData": "facilityId=2e554328-7850-44c3-95ee-281593d4cbe7&date=2026-09-21T17%3A15%3A09.610Z&daysCount=7&duration=60&serviceId=cfdea38b-9ad8-4b8b-be51-c3c58d056300&durationIds%5B%5D=c54efb59-8908-4178-b28e-58162b54e894&durationIds%5B%5D=30631cc3-1593-4c83-abca-ef393ff83b9b&__RequestVerificationToken=__TOKEN__"
+      },
+      "priceOptions": [
+        {
+          "name": "Tennis Off-Peak Fee",
+          "amount": 39,
+          "currency": "AUD",
+          "durationMinutes": 60
+        },
+        {
+          "name": "Tennis Peak Fee",
+          "amount": 50,
+          "currency": "AUD",
+          "durationMinutes": 60
+        }
+      ]
+    },
+    {
+      "court": "Court 3",
+      "domLabel": "Tennis Hard Court 3",
+      "facilityId": "25b51a37-76e7-4da0-8b0b-257dd1171745",
+      "captured": {
+        "url": "https://susf.perfectmind.com/39161/Clients/BookMe4LandingPages/FacilityAvailability",
+        "method": "POST",
+        "headers": {
+          "x-requested-with": "XMLHttpRequest",
+          "accept": "application/json, text/javascript, */*; q=0.01",
+          "content-type": "application/x-www-form-urlencoded; charset=UTF-8"
+        },
+        "postData": "facilityId=25b51a37-76e7-4da0-8b0b-257dd1171745&date=2026-09-21T17%3A15%3A17.265Z&daysCount=7&duration=60&serviceId=cfdea38b-9ad8-4b8b-be51-c3c58d056300&durationIds%5B%5D=cf7616ab-58bf-4313-a857-1df12efa8a56&durationIds%5B%5D=0e6ae112-8d6b-48ce-bd7c-bb96a032f0c3&__RequestVerificationToken=__TOKEN__"
+      },
+      "priceOptions": [
+        {
+          "name": "Tennis Off-Peak Fee",
+          "amount": 39,
+          "currency": "AUD",
+          "durationMinutes": 60
+        },
+        {
+          "name": "Tennis Peak Fee",
+          "amount": 50,
+          "currency": "AUD",
+          "durationMinutes": 60
+        }
+      ]
+    },
+    {
+      "court": "Court 4",
+      "domLabel": "Tennis Synthetic Court 4",
+      "facilityId": "2d1184fd-610d-40fd-b96a-8890efb8e074",
+      "captured": {
+        "url": "https://susf.perfectmind.com/39161/Clients/BookMe4LandingPages/FacilityAvailability",
+        "method": "POST",
+        "headers": {
+          "x-requested-with": "XMLHttpRequest",
+          "accept": "application/json, text/javascript, */*; q=0.01",
+          "content-type": "application/x-www-form-urlencoded; charset=UTF-8"
+        },
+        "postData": "facilityId=2d1184fd-610d-40fd-b96a-8890efb8e074&date=2026-09-21T17%3A15%3A24.652Z&daysCount=7&duration=60&serviceId=cfdea38b-9ad8-4b8b-be51-c3c58d056300&durationIds%5B%5D=1ceeaeeb-f2ab-4d30-9891-43b39b77e78f&durationIds%5B%5D=33cb2816-6ffb-45dc-a05c-8d10b805cdf7&__RequestVerificationToken=__TOKEN__"
+      },
+      "priceOptions": [
+        {
+          "name": "Tennis Peak Fee",
+          "amount": 39,
+          "currency": "AUD",
+          "durationMinutes": 60
+        },
+        {
+          "name": "Tennis Off-Peak Fee",
+          "amount": 29,
+          "currency": "AUD",
+          "durationMinutes": 60
+        }
+      ]
+    },
+    {
+      "court": "Court 5",
+      "domLabel": "Tennis Synthetic Court 5",
+      "facilityId": "eeecf276-bce4-4337-b825-75a32727d089",
+      "captured": {
+        "url": "https://susf.perfectmind.com/39161/Clients/BookMe4LandingPages/FacilityAvailability",
+        "method": "POST",
+        "headers": {
+          "x-requested-with": "XMLHttpRequest",
+          "accept": "application/json, text/javascript, */*; q=0.01",
+          "content-type": "application/x-www-form-urlencoded; charset=UTF-8"
+        },
+        "postData": "facilityId=eeecf276-bce4-4337-b825-75a32727d089&date=2026-09-21T17%3A15%3A32.030Z&daysCount=7&duration=60&serviceId=cfdea38b-9ad8-4b8b-be51-c3c58d056300&durationIds%5B%5D=58ff56e4-1bd2-43a3-bb32-22ff29a91c55&durationIds%5B%5D=fadfa3e4-e5fe-4338-b46f-c670880f3582&__RequestVerificationToken=__TOKEN__"
+      },
+      "priceOptions": [
+        {
+          "name": "Tennis Peak Fee",
+          "amount": 39,
+          "currency": "AUD",
+          "durationMinutes": 60
+        },
+        {
+          "name": "Tennis Off-Peak Fee",
+          "amount": 29,
+          "currency": "AUD",
+          "durationMinutes": 60
+        }
+      ]
+    },
+    {
+      "court": "Court 6",
+      "domLabel": "Tennis Synthetic Court 6",
+      "facilityId": "3b5c69f8-1665-439d-befe-29fabad8c044",
+      "captured": {
+        "url": "https://susf.perfectmind.com/39161/Clients/BookMe4LandingPages/FacilityAvailability",
+        "method": "POST",
+        "headers": {
+          "x-requested-with": "XMLHttpRequest",
+          "accept": "application/json, text/javascript, */*; q=0.01",
+          "content-type": "application/x-www-form-urlencoded; charset=UTF-8"
+        },
+        "postData": "facilityId=3b5c69f8-1665-439d-befe-29fabad8c044&date=2026-09-21T17%3A15%3A40.108Z&daysCount=7&duration=60&serviceId=cfdea38b-9ad8-4b8b-be51-c3c58d056300&durationIds%5B%5D=11392e2f-6711-4eac-ab2b-929455f037f9&durationIds%5B%5D=21be343b-8b82-4830-b8ee-e10a95fde140&__RequestVerificationToken=__TOKEN__"
+      },
+      "priceOptions": [
+        {
+          "name": "Tennis Off-Peak Fee",
+          "amount": 29,
+          "currency": "AUD",
+          "durationMinutes": 60
+        },
+        {
+          "name": "Tennis Peak Fee",
+          "amount": 39,
+          "currency": "AUD",
+          "durationMinutes": 60
+        }
+      ]
+    }
+  ],
+  "source": {
+    "type": "captured_from_public_dom",
+    "note": "Facility IDs and request shapes were captured from the official public SUSF booking page; no cookies or tokens are stored."
+  }
+}
