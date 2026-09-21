@@ -1,0 +1,15 @@
+[Unit]
+Description=CourtPilot availability collector
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/courtpilot
+EnvironmentFile=/opt/courtpilot/.env.collector
+ExecStart=/usr/bin/npm run collect:availability
+TimeoutStartSec=9min
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

@@ -114,6 +114,9 @@ function parseBootstrapMetadata(html, venue) {
 async function bootstrapAnonymousSession(venue, { signal = null } = {}) {
   const browser = await chromium.launch({
     headless: true,
+    ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+      ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
+      : {}),
     args: [
       '--disable-dev-shm-usage',
       '--disable-gpu',

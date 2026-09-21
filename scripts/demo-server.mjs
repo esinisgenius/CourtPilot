@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { recommendCourts } from '../packages/agent/src/index.mjs';
+import { getSnapshotAvailability } from '../packages/availability-snapshots/src/store.mjs';
 import { getSusfAvailability } from '../packages/susf/src/index.mjs';
 
 const rootDir = resolve(fileURLToPath(new URL('../apps/web', import.meta.url)));
@@ -131,12 +132,19 @@ async function handleRevalidate(request, response) {
     sendJson(response, 400, { ok: false, error: { code: 'INVALID_REVALIDATION', message: 'A SUSF court, date, and time are required.' } });
     return;
   }
-  const availability = await getSusfAvailability({
-    date: body.localDate,
-    days: 1,
-    durationMinutes: Number(body.durationMinutes ?? 60),
-    forceRefresh: true,
-  });
+  const snapshotOnly = process.env.AVAILABILITY_SNAPSHOT_ONLY === '1';
+  const availability = snapshotOnly
+    ? await getSnapshotAvailability('susf', {
+      date: body.localDate,
+      days: 1,
+      durationMinutes: Number(body.durationMinutes ?? 60),
+    })
+    : await getSusfAvailability({
+      date: body.localDate,
+      days: 1,
+      durationMinutes: Number(body.durationMinutes ?? 60),
+      forceRefresh: true,
+    });
   const available = availability.some((slot) => (
     slot.court === body.court
     && slot.startTime?.slice(0, 10) === body.localDate
@@ -145,8 +153,10 @@ async function handleRevalidate(request, response) {
   sendJson(response, 200, {
     ok: true,
     available,
-    checkedAt: availability.discovery?.checkedAt ?? new Date().toISOString(),
-    stale: Boolean(availability.discovery?.stale),
+    checkedAt: availability.snapshot?.collectedAt ?? availability.discovery?.checkedAt ?? new Date().toISOString(),
+    stale: snapshotOnly
+      ? Boolean(availability.snapshot?.stale)
+      : Boolean(availability.discovery?.stale),
   });
 }
 
@@ -201,7 +211,11 @@ const server = createServer(async (request, response) => {
     }
 
     if (request.method === 'GET' && new URL(request.url, `http://${host}:${port}`).pathname === '/api/health') {
-      sendJson(response, 200, { ok: true, susf: susfRefreshStatus });
+      sendJson(response, 200, {
+        ok: true,
+        availabilityMode: process.env.AVAILABILITY_SNAPSHOT_ONLY === '1' ? 'snapshot' : 'direct',
+        susf: process.env.AVAILABILITY_SNAPSHOT_ONLY === '1' ? null : susfRefreshStatus,
+      });
       return;
     }
 
@@ -226,8 +240,8 @@ const server = createServer(async (request, response) => {
 
 server.listen(port, host, () => {
   console.log(`CourtPilot demo server listening at http://${host}:${port}/`);
-  refreshSusfSnapshot();
-  if (Number.isFinite(susfRefreshIntervalMs) && susfRefreshIntervalMs > 0) {
+  if (process.env.AVAILABILITY_SNAPSHOT_ONLY !== '1') refreshSusfSnapshot();
+  if (process.env.AVAILABILITY_SNAPSHOT_ONLY !== '1' && Number.isFinite(susfRefreshIntervalMs) && susfRefreshIntervalMs > 0) {
     setInterval(refreshSusfSnapshot, susfRefreshIntervalMs).unref();
   }
 });

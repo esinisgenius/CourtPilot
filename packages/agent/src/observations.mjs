@@ -8,6 +8,7 @@ import { getSportLogicAvailability } from '../../sportlogic/src/index.mjs';
 import { getUnifiedBookingsAvailability } from '../../unified-bookings/src/index.mjs';
 import { markProviderObserved, normalizeProviderScope } from './provider-scope.mjs';
 import { validateAgentState } from './state.mjs';
+import { snapshotFetcher } from '../../availability-snapshots/src/store.mjs';
 
 const DEFAULT_PROVIDER_FETCHERS = Object.freeze({
   susf: getSusfAvailability,
@@ -18,6 +19,16 @@ const DEFAULT_PROVIDER_FETCHERS = Object.freeze({
   intrac: getIntracAvailability,
   mindbody: getMindbodyAvailability,
 });
+
+const SNAPSHOT_PROVIDER_FETCHERS = Object.freeze(Object.fromEntries(
+  Object.keys(DEFAULT_PROVIDER_FETCHERS).map((providerId) => [providerId, snapshotFetcher(providerId)]),
+));
+
+function runtimeProviderFetchers() {
+  return process.env.AVAILABILITY_SNAPSHOT_ONLY === '1'
+    ? SNAPSHOT_PROVIDER_FETCHERS
+    : DEFAULT_PROVIDER_FETCHERS;
+}
 
 function mergeCandidates(existingCandidates, newCandidates) {
   const byId = new Map();
@@ -88,7 +99,7 @@ function recordProviderObservation(factualObservations = {}, observation) {
 }
 
 async function observeConfiguredAvailabilityProviders(state, {
-  providerFetchers = DEFAULT_PROVIDER_FETCHERS,
+  providerFetchers = runtimeProviderFetchers(),
   availabilityOptions = {},
   candidateBuilder = buildCandidates,
   providerTimeoutMs = Number(process.env.PROVIDER_TIMEOUT_MS ?? 12000),
@@ -241,6 +252,7 @@ async function fetchWithBudget(fetchAvailability, options, {
 
 export {
   DEFAULT_PROVIDER_FETCHERS,
+  SNAPSHOT_PROVIDER_FETCHERS,
   mergeCandidates,
   observeConfiguredAvailabilityProviders,
 };

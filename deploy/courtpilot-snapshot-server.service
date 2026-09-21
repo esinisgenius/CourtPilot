@@ -1,0 +1,17 @@
+[Unit]
+Description=CourtPilot read-only availability snapshot API
+After=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/courtpilot
+EnvironmentFile=/opt/courtpilot/.env.collector
+ExecStart=/usr/bin/node scripts/snapshot-server.mjs
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
