@@ -139,7 +139,11 @@ async function bootstrapAnonymousSession(venue, { signal = null } = {}) {
       const type = route.request().resourceType();
       return ['image', 'font', 'media'].includes(type) ? route.abort() : route.continue();
     });
-    await page.goto(venue.officialUrl, { waitUntil: 'networkidle', timeout: 60000 });
+    await page.goto(venue.officialUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForFunction(
+      () => document.documentElement.innerHTML.includes('fetch-booking-data'),
+      { timeout: 60000 },
+    );
     const html = await page.content();
     const cookies = await context.cookies();
     const cookieHeader = cookies

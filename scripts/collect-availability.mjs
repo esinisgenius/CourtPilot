@@ -27,7 +27,11 @@ const providerJobs = [
 ];
 
 function compactError(error) {
-  return { code: error.code ?? error.name ?? 'COLLECTION_FAILED', message: error.message };
+  return {
+    code: error.code ?? error.name ?? 'COLLECTION_FAILED',
+    message: error.message,
+    ...(Array.isArray(error.failures) ? { failures: error.failures } : {}),
+  };
 }
 
 async function withTimeout(fn) {
