@@ -266,11 +266,25 @@ async function chooseReplanningDecision(state, {
     }
   }
 
-  return {
-    source: 'heuristic',
-    action: await validateAction(validateReplanningAction(heuristicReplanningAction(state, evaluation))),
-    validationFailure: null,
-  };
+  const heuristicAction = validateReplanningAction(heuristicReplanningAction(state, evaluation));
+  try {
+    return {
+      source: 'heuristic',
+      action: await validateAction(heuristicAction),
+      validationFailure: null,
+    };
+  } catch (error) {
+    return {
+      source: 'heuristic_fallback',
+      action: validateReplanningAction({
+        selectedAction: REPLANNING_ACTIONS.ASK_USER,
+        targetPreference: null,
+        rationale: 'The deterministic replanner cannot make further bounded progress.',
+        expectedEffect: 'Ask the user for clarification without changing hard constraints.',
+      }),
+      validationFailure: compactFailure(error),
+    };
+  }
 }
 
 export {

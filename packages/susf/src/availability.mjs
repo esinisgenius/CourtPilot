@@ -27,6 +27,7 @@ const DEFAULT_CAPTURE_TIMEOUT_MS = 120_000;
 const DEFAULT_METADATA_CACHE_PATH = resolve('.cache/susf-metadata.json');
 const DEFAULT_METADATA_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_AVAILABILITY_CACHE_TTL_MS = 10 * 60 * 1000;
+const DEFAULT_TARGET_COURT_NUMBERS = Object.freeze([4, 5, 6]);
 const SUSF_METADATA_CACHE_VERSION = 1;
 const availabilityCache = new Map();
 const SUSF_CANONICAL_VENUE = Object.freeze({
@@ -88,13 +89,20 @@ function availabilityCacheKey({
   date,
   days,
   durationMinutes,
+  targetCourtNumbers,
 }) {
   return JSON.stringify({
     bookingUrl,
     date,
     days: Number(days),
     durationMinutes: Number(durationMinutes),
+    targetCourtNumbers: targetCourtNumbers.map(Number).sort((a, b) => a - b),
   });
+}
+
+function targetSusfCourts(courts, targetCourtNumbers = DEFAULT_TARGET_COURT_NUMBERS) {
+  const targets = new Set(targetCourtNumbers.map(Number));
+  return courts.filter((court) => targets.has(Number(String(court.court).match(/\d+/)?.[0])));
 }
 
 function readAvailabilityCache(key, ttlMs = DEFAULT_AVAILABILITY_CACHE_TTL_MS) {
@@ -571,17 +579,22 @@ async function readSusfAvailabilityWithCachedMetadata({
   days,
   durationMinutes,
   signal = null,
+  targetCourtNumbers = DEFAULT_TARGET_COURT_NUMBERS,
 }) {
   const token = await getVerificationToken(page);
   const rows = [];
+  const cachedCourts = targetSusfCourts(cache.courts, targetCourtNumbers);
+  if (cachedCourts.length === 0) {
+    throw new SusfAvailabilityError('SUSF_METADATA_CACHE_MISS', 'SUSF metadata cache does not contain the requested courts.');
+  }
 
-  for (const court of cache.courts) {
+  for (const court of cachedCourts) {
     if (signal?.aborted) {
       throw partialAvailabilityError(signal, rows, {
         durationMinutes,
         discovery: {
-          facilityCount: cache.courts.length,
-          courtCount: cache.courts.length,
+          facilityCount: cachedCourts.length,
+          courtCount: cachedCourts.length,
           source: 'metadata_cache',
         },
       });
@@ -601,8 +614,8 @@ async function readSusfAvailabilityWithCachedMetadata({
         throw partialAvailabilityError(signal, rows, {
           durationMinutes,
           discovery: {
-            facilityCount: cache.courts.length,
-            courtCount: cache.courts.length,
+            facilityCount: cachedCourts.length,
+            courtCount: cachedCourts.length,
             source: 'metadata_cache',
           },
         });
@@ -623,8 +636,8 @@ async function readSusfAvailabilityWithCachedMetadata({
   return availabilityFromRows(rows, {
     durationMinutes,
     discovery: {
-      facilityCount: cache.courts.length,
-      courtCount: cache.courts.length,
+      facilityCount: cachedCourts.length,
+      courtCount: cachedCourts.length,
       source: 'metadata_cache',
     },
   });
@@ -642,6 +655,7 @@ async function readSusfAvailability({
   metadataCacheTtlMs = Number(process.env.SUSF_METADATA_CACHE_TTL_MS ?? DEFAULT_METADATA_CACHE_TTL_MS),
   availabilityCacheTtlMs = Number(process.env.SUSF_AVAILABILITY_CACHE_TTL_MS ?? DEFAULT_AVAILABILITY_CACHE_TTL_MS),
   forceDiscovery = process.env.SUSF_FORCE_DISCOVERY === '1',
+  targetCourtNumbers = DEFAULT_TARGET_COURT_NUMBERS,
 } = {}) {
   const normalizedBookingUrl = normalizeConfiguredUrl(bookingUrl);
   const cacheKey = availabilityCacheKey({
@@ -649,6 +663,7 @@ async function readSusfAvailability({
     date,
     days,
     durationMinutes,
+    targetCourtNumbers,
   });
   const cachedAvailability = readAvailabilityCache(cacheKey, availabilityCacheTtlMs);
   if (cachedAvailability) return cachedAvailability;
@@ -682,6 +697,7 @@ async function readSusfAvailability({
           days,
           durationMinutes,
           signal,
+          targetCourtNumbers,
         });
         writeAvailabilityCache(cacheKey, availability);
         return availability;
@@ -691,10 +707,11 @@ async function readSusfAvailability({
       }
     }
 
-    const courts = await findCourtFacilities(page);
+    const discoveredCourts = await findCourtFacilities(page);
+    const courts = targetSusfCourts(discoveredCourts, targetCourtNumbers);
 
     if (courts.length === 0) {
-      throw new Error('Could not find any Tennis court data-facilityid values.');
+      throw new Error(`Could not find target Tennis courts ${targetCourtNumbers.join(', ')} in the page data-facilityid values.`);
     }
 
     const rows = [];
@@ -738,6 +755,16 @@ async function readSusfAvailability({
         facilityId: court.facilityId,
         captured: sanitizeCapturedAvailabilityRequest(captured),
         priceOptions,
+      });
+
+      await writeMetadataCache(metadataCachePath, {
+        version: SUSF_METADATA_CACHE_VERSION,
+        bookingUrl: normalizedBookingUrl,
+        facilityListUrl,
+        createdAt: new Date().toISOString(),
+        courts: cacheCourts,
+      }).catch((error) => {
+        console.warn(`Unable to checkpoint SUSF metadata cache: ${error.message}`);
       });
 
       const requestOptions = {
@@ -813,6 +840,7 @@ async function getSusfAvailability(options = {}) {
 export {
   DEFAULT_BOOKING_URL,
   DEFAULT_CAPTURE_TIMEOUT_MS,
+  DEFAULT_TARGET_COURT_NUMBERS,
   SusfAvailabilityError,
   buildCourtBookingUrl,
   buildRankedCandidates,
@@ -825,6 +853,7 @@ export {
   isAvailabilityTriggerText,
   normalizeRateTableFromPriceArrays,
   selectSusfSlotPrice,
+  targetSusfCourts,
   normalizeAvailability,
   readSusfAvailability,
   toPublicAvailability,

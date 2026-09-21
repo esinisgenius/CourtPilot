@@ -1,6 +1,7 @@
 export {
   DEFAULT_BOOKING_URL,
   DEFAULT_CAPTURE_TIMEOUT_MS,
+  DEFAULT_TARGET_COURT_NUMBERS,
   SusfAvailabilityError,
   buildCourtBookingUrl,
   buildRankedCandidates,
@@ -14,6 +15,7 @@ export {
   isAvailabilityTriggerText,
   normalizeRateTableFromPriceArrays,
   selectSusfSlotPrice,
+  targetSusfCourts,
   readSusfAvailability,
   toPublicAvailability,
 } from './availability.mjs';
