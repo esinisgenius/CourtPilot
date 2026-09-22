@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   WeatherMemoryCache,
   WeatherProviderError,
+  createOpenMeteoProvider,
   forecastHourKeyForSlot,
   getWeatherForSlots,
 } from '../packages/weather/src/index.mjs';
@@ -149,4 +150,34 @@ test('provider error returns unavailable weather and does not pretend weather is
 
   assert.equal(rows[0].forecastAvailable, false);
   assert.equal(rows[0].unavailableReason, 'WEATHER_PROVIDER_HTTP_ERROR');
+});
+
+test('Open-Meteo provider retries one transient network failure', async () => {
+  let attempts = 0;
+  const provider = createOpenMeteoProvider({
+    fetchImpl: async () => {
+      attempts += 1;
+      if (attempts === 1) throw new TypeError('temporary network failure');
+      return {
+        ok: true,
+        async json() {
+          return {
+            hourly: {
+              time: ['2026-09-03T18:00'],
+              temperature_2m: [21],
+            },
+          };
+        },
+      };
+    },
+  });
+
+  const result = await provider.getHourlyForecast({
+    location: sydney,
+    startDate: '2026-09-03',
+    endDate: '2026-09-03',
+  });
+
+  assert.equal(attempts, 2);
+  assert.equal(result.get('2026-09-03T18:00').temperatureC, 21);
 });

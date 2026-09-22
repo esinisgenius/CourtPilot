@@ -66,6 +66,35 @@ function sendJson(response, statusCode, payload) {
   response.end(`${JSON.stringify(payload, null, 2)}\n`);
 }
 
+function logWeatherDiagnostics(result) {
+  const candidates = result?.candidates ?? [];
+  const unavailable = candidates
+    .filter((candidate) => candidate.weather?.forecastAvailable !== true)
+    .map((candidate) => ({
+      reason: candidate.weather?.unavailableReason ?? 'missing_weather_payload',
+      venue: candidate.venue ?? null,
+      court: candidate.court ?? null,
+      startTime: candidate.startTime ?? null,
+      source: candidate.weather?.source ?? null,
+      fallbackLevel: candidate.weather?.fallbackLevel ?? null,
+    }));
+  if (unavailable.length === 0) return;
+
+  const reasons = unavailable.reduce((counts, item) => {
+    counts[item.reason] = (counts[item.reason] ?? 0) + 1;
+    return counts;
+  }, {});
+  console.warn(JSON.stringify({
+    event: 'weather_enrichment_unavailable',
+    timestamp: new Date().toISOString(),
+    recommendationStatus: result?.status ?? null,
+    candidateCount: candidates.length,
+    unavailableCount: unavailable.length,
+    reasons,
+    samples: unavailable.slice(0, 5),
+  }));
+}
+
 async function readJsonRequest(request) {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
@@ -123,6 +152,7 @@ async function handleRecommend(request, response) {
     recentBehavior: body.recentBehavior,
     signal: controller.signal,
   });
+  logWeatherDiagnostics(result);
   if (!response.writableEnded) sendJson(response, result.ok ? 200 : 502, result);
 }
 

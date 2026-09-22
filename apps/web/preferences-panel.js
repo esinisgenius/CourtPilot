@@ -692,6 +692,9 @@ function cardFactChips(candidate) {
   const facts = relevantFacts(candidate);
   const warning = weatherWarningLabel(candidate);
   if (warning) facts.unshift({ label: warning, warning: true });
+  else if (candidate.weather && candidate.weather.forecastAvailable === false) {
+    facts.unshift({ label: 'Weather unavailable', warning: true });
+  }
   return facts;
 }
 

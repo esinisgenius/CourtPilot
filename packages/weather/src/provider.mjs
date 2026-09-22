@@ -40,6 +40,7 @@ function createOpenMeteoProvider({
   fetchImpl = globalThis.fetch,
   baseUrl = OPEN_METEO_FORECAST_URL,
   stats = { requestCount: 0 },
+  maxAttempts = 2,
 } = {}) {
   if (typeof fetchImpl !== 'function') {
     throw new WeatherProviderError('WEATHER_FETCH_UNAVAILABLE', 'fetch is not available in this runtime');
@@ -49,7 +50,6 @@ function createOpenMeteoProvider({
     name: 'open-meteo',
     stats,
     async getHourlyForecast({ location, startDate, endDate }) {
-      stats.requestCount += 1;
       const url = new URL(baseUrl);
       url.searchParams.set('latitude', String(location.latitude));
       url.searchParams.set('longitude', String(location.longitude));
@@ -66,12 +66,23 @@ function createOpenMeteoProvider({
       ].join(','));
       url.searchParams.set('wind_speed_unit', 'kmh');
 
-      const response = await fetchImpl(url);
-      if (!response.ok) {
-        throw new WeatherProviderError('WEATHER_PROVIDER_HTTP_ERROR', `Open-Meteo failed with HTTP ${response.status}`);
+      let lastError = null;
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        stats.requestCount += 1;
+        try {
+          const response = await fetchImpl(url);
+          if (response.ok) return normalizeOpenMeteoHourly(await response.json());
+          lastError = new WeatherProviderError(
+            'WEATHER_PROVIDER_HTTP_ERROR',
+            `Open-Meteo failed with HTTP ${response.status}`,
+          );
+          if (response.status < 500 || attempt === maxAttempts) throw lastError;
+        } catch (error) {
+          lastError = error;
+          if (error instanceof WeatherProviderError || attempt === maxAttempts) throw error;
+        }
       }
-
-      return normalizeOpenMeteoHourly(await response.json());
+      throw lastError;
     },
   };
 }
