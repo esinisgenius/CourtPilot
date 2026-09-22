@@ -77,6 +77,8 @@ function logWeatherDiagnostics(result) {
       startTime: candidate.startTime ?? null,
       source: candidate.weather?.source ?? null,
       fallbackLevel: candidate.weather?.fallbackLevel ?? null,
+      httpStatus: candidate.weather?.httpStatus ?? null,
+      detail: candidate.weather?.unavailableDetail ?? null,
     }));
   if (unavailable.length === 0) return;
 

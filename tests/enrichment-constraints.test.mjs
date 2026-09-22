@@ -731,6 +731,38 @@ test('nearby weather unavailable falls back to Sydney weather', async () => {
   assert.equal(enriched.features.weather.confidence, 'low');
 });
 
+test('provider-level weather failure does not retry every fallback location', async () => {
+  let calls = 0;
+  const base = candidate('provider-weather-failure');
+  const [enriched] = await enrichCandidates({
+    candidates: [{
+      ...base,
+      features: {
+        ...base.features,
+        venue: {
+          id: 'test-burwood',
+          name: 'Test Burwood',
+          suburb: 'Burwood',
+          location: { lat: -33.8775, lng: 151.1035 },
+        },
+      },
+    }],
+    weatherAdapter: async ({ slots }) => {
+      calls += 1;
+      return slots.map((slot) => ({
+        candidateId: slot.id,
+        startTime: slot.startTime,
+        forecastAvailable: false,
+        unavailableReason: 'WEATHER_PROVIDER_HTTP_ERROR',
+        httpStatus: 429,
+      }));
+    },
+  });
+
+  assert.equal(calls, 1);
+  assert.equal(enriched.features.weather.httpStatus, 429);
+});
+
 test('soft weather preference keeps candidate when all weather sources are unavailable', () => {
   const current = candidateBatch([
     withWeather(candidate('soft-weather-unavailable'), {

@@ -163,6 +163,12 @@ function unavailableWeatherRow(candidate, entry, reason) {
   }, entry);
 }
 
+function isProviderLevelWeatherFailure(row) {
+  return row?.unavailableReason === 'WEATHER_PROVIDER_HTTP_ERROR'
+    || row?.unavailableReason === 'WEATHER_PROVIDER_ERROR'
+    || row?.unavailableReason === 'WEATHER_FETCH_UNAVAILABLE';
+}
+
 async function weatherRowsWithFallback({
   candidates,
   defaultLocation,
@@ -215,7 +221,7 @@ async function weatherRowsWithFallback({
       for (const candidate of batch.candidates) {
         const row = byId.get(candidate.id)
           ?? unavailableWeatherRow(candidate, batch.entry, 'weather_row_missing');
-        if (row.forecastAvailable) {
+        if (row.forecastAvailable || isProviderLevelWeatherFailure(row)) {
           rows.set(candidate.id, row);
           pending.delete(candidate.id);
         } else {

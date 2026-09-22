@@ -38,7 +38,7 @@ function getForecastDateRange(slots, timezone) {
   };
 }
 
-function unavailableWeather(slot, source, reason) {
+function unavailableWeather(slot, source, reason, detail = null, httpStatus = null) {
   return {
     candidateId: slot.id,
     startTime: slot.startTime,
@@ -51,6 +51,8 @@ function unavailableWeather(slot, source, reason) {
     source,
     forecastAvailable: false,
     unavailableReason: reason,
+    unavailableDetail: detail,
+    httpStatus,
   };
 }
 
@@ -97,7 +99,15 @@ async function getWeatherForSlots({
     }
   } catch (error) {
     const reason = error instanceof WeatherProviderError ? error.code : 'WEATHER_PROVIDER_ERROR';
-    return slots.map((slot) => unavailableWeather(slot, provider.name ?? 'weather-provider', reason));
+    const detail = error instanceof Error ? error.message : String(error);
+    const httpStatus = error instanceof WeatherProviderError ? error.httpStatus : null;
+    return slots.map((slot) => unavailableWeather(
+      slot,
+      provider.name ?? 'weather-provider',
+      reason,
+      detail,
+      httpStatus,
+    ));
   }
 
   return slots.map((slot) => weatherForSlot(slot, hourlyForecast, timezone, provider.name ?? 'weather-provider'));

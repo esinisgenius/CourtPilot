@@ -5,6 +5,7 @@ class WeatherProviderError extends Error {
     super(message, options);
     this.name = 'WeatherProviderError';
     this.code = code;
+    this.httpStatus = options?.httpStatus ?? null;
   }
 }
 
@@ -75,6 +76,7 @@ function createOpenMeteoProvider({
           lastError = new WeatherProviderError(
             'WEATHER_PROVIDER_HTTP_ERROR',
             `Open-Meteo failed with HTTP ${response.status}`,
+            { httpStatus: response.status },
           );
           if (response.status < 500 || attempt === maxAttempts) throw lastError;
         } catch (error) {

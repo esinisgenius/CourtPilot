@@ -150,6 +150,22 @@ test('provider error returns unavailable weather and does not pretend weather is
 
   assert.equal(rows[0].forecastAvailable, false);
   assert.equal(rows[0].unavailableReason, 'WEATHER_PROVIDER_HTTP_ERROR');
+  assert.equal(rows[0].unavailableDetail, 'WEATHER_PROVIDER_HTTP_ERROR');
+});
+
+test('Open-Meteo provider preserves HTTP status on failure', async () => {
+  const provider = createOpenMeteoProvider({
+    fetchImpl: async () => ({ ok: false, status: 429 }),
+  });
+
+  await assert.rejects(
+    provider.getHourlyForecast({
+      location: sydney,
+      startDate: '2026-09-03',
+      endDate: '2026-09-03',
+    }),
+    (error) => error.code === 'WEATHER_PROVIDER_HTTP_ERROR' && error.httpStatus === 429,
+  );
 });
 
 test('Open-Meteo provider retries one transient network failure', async () => {
