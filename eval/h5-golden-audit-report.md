@@ -1,37 +1,37 @@
 # H5 Golden QA Audit
 
-Generated: 2026-09-14T08:45:11.476Z
+Generated: 2026-09-21T12:42:42.766Z
 
-Pass rate: 20/20 (100%)
+Pass rate: 19/20 (95%)
 
 ## Cases
 
 | Case | Category | Result | Actual behavior | Failure root cause |
 | --- | --- | --- | --- | --- |
-| L02-suburb-mascot | location:suburb | PASS | ASKING_USER; providers=bookable; recommendations=Aloha Street Tennis Courts |  |
-| L03-suburb-chatswood-unseen | location:suburb | PASS | ASKING_USER; providers=none; recommendations=none |  |
+| L02-suburb-mascot | location:suburb | PASS | SATISFACTORY; providers=bookable; recommendations=Aloha Street Tennis Courts |  |
+| L03-suburb-chatswood-unseen | location:suburb | FAIL | MAX_ITERATIONS_REACHED; providers=sportlogic; recommendations=none | Location resolution is limited to a small static canonical alias list plus configured venue text matching; no Maps-backed geocoding path is used by the H5 recommendation service. |
 | L04-natural-cn-burwood | location:natural-language | PASS | SATISFACTORY; providers=sportlogic, unified-bookings; recommendations=Burwood Tennis Courts, Strathfield Sports Club Tennis |  |
 | L05-landmark-usyd | location:landmark | PASS | SATISFACTORY; providers=susf, intrac; recommendations=Sydney Uni Sport Tennis Courts, Sydney Uni Sport Tennis Courts |  |
-| L06-station-central | location:landmark | PASS | SATISFACTORY; providers=susf, intrac; recommendations=Sydney Uni Sport Tennis Courts, Sydney Uni Sport Tennis Courts, Moore Park Tennis Courts |  |
+| L06-station-central | location:landmark | PASS | SATISFACTORY; providers=intrac, susf, mindbody; recommendations=Sydney Uni Sport Tennis Courts, Sydney Uni Sport Tennis Courts, Moore Park Tennis Courts |  |
 | L07-university-macquarie | location:landmark | PASS | ASKING_USER; providers=none; recommendations=none |  |
 | L08-shopping-centre-broadway | location:poi | PASS | SATISFACTORY; providers=susf, intrac; recommendations=Sydney Uni Sport Tennis Courts, Sydney Uni Sport Tennis Courts, Moore Park Tennis Courts |  |
-| L09-fuzzy-city-nearby | location:fuzzy | PASS | SATISFACTORY; providers=susf; recommendations=Sydney Uni Sport Tennis Courts, Sydney Uni Sport Tennis Courts |  |
-| L10-implicit-profile-location | location:implicit | PASS | SATISFACTORY; providers=sportlogic, unified-bookings; recommendations=Strathfield Sports Club Tennis, Burwood Tennis Courts |  |
-| L11-implicit-current-location | location:implicit | PASS | SATISFACTORY; providers=sportlogic, unified-bookings; recommendations=Burwood Tennis Courts, Strathfield Sports Club Tennis |  |
-| L12-no-location-sydney-fallback | location:implicit | PASS | ASKING_USER; providers=susf, bookable, intrac, sportlogic, unified-bookings; recommendations=Strathfield Sports Club Tennis, Aloha Street Tennis Courts, Sydney Uni Sport Tennis Courts |  |
+| L09-fuzzy-city-nearby | location:fuzzy | PASS | SATISFACTORY; providers=mindbody, susf; recommendations=Sydney Uni Sport Tennis Courts, Sydney Uni Sport Tennis Courts |  |
+| L10-implicit-profile-location | location:implicit | PASS | SATISFACTORY; providers=unified-bookings, sportlogic; recommendations=Strathfield Sports Club Tennis, Burwood Tennis Courts |  |
+| L11-implicit-current-location | location:implicit | PASS | SATISFACTORY; providers=unified-bookings, sportlogic; recommendations=Burwood Tennis Courts, Strathfield Sports Club Tennis |  |
+| L12-no-location-sydney-fallback | location:implicit | PASS | SATISFACTORY; providers=mindbody, intrac, sportlogic, bookable, unified-bookings, susf; recommendations=Strathfield Sports Club Tennis, Aloha Street Tennis Courts, Sydney Uni Sport Tennis Courts |  |
 | L13-ambiguous-newtown | location:ambiguous | PASS | ASKING_USER; providers=none; recommendations=none |  |
-| L14-out-of-scope-strathfield | provider-routing | PASS | SATISFACTORY; providers=sportlogic, unified-bookings; recommendations=Burwood Tennis Courts, Strathfield Sports Club Tennis |  |
-| T15-weekend-sunday-after-8 | time | PASS | ASKING_USER; providers=susf, bookable, intrac, sportlogic, unified-bookings; recommendations=Strathfield Sports Club Tennis |  |
-| T16-before-13-or-after-17 | time | PASS | ASKING_USER; providers=susf, bookable, intrac, sportlogic, unified-bookings; recommendations=Sydney Uni Sport Tennis Courts, Sydney Uni Sport Tennis Courts, Aloha Street Tennis Courts |  |
-| T17-hard-continuous-two-hours | time:duration | PASS | MAX_ITERATIONS_REACHED; providers=susf, bookable, intrac, sportlogic, unified-bookings; recommendations=none |  |
-| P19-soft-weather-unknown-retained | weather | PASS | SATISFACTORY; providers=sportlogic, unified-bookings; recommendations=Burwood Tennis Courts, Strathfield Sports Club Tennis |  |
-| P20-hard-weather-unknown-fail-closed | weather | PASS | MAX_ITERATIONS_REACHED; providers=sportlogic, unified-bookings; recommendations=none |  |
-| V21-positive-tennis-proof | provider-integrity | PASS | ASKING_USER; providers=bookable; recommendations=Aloha Street Tennis Courts |  |
+| L14-out-of-scope-strathfield | provider-routing | PASS | SATISFACTORY; providers=unified-bookings, sportlogic; recommendations=Burwood Tennis Courts, Strathfield Sports Club Tennis |  |
+| T15-weekend-sunday-after-8 | time | PASS | SATISFACTORY; providers=mindbody, intrac, sportlogic, bookable, unified-bookings, susf; recommendations=Strathfield Sports Club Tennis |  |
+| T16-before-13-or-after-17 | time | PASS | SATISFACTORY; providers=mindbody, intrac, sportlogic, bookable, unified-bookings, susf; recommendations=Sydney Uni Sport Tennis Courts, Sydney Uni Sport Tennis Courts, Aloha Street Tennis Courts |  |
+| T17-hard-continuous-two-hours | time:duration | PASS | ASKING_USER; providers=mindbody, intrac, sportlogic, bookable, unified-bookings, susf; recommendations=none |  |
+| P19-soft-weather-unknown-retained | weather | PASS | SATISFACTORY; providers=unified-bookings, sportlogic; recommendations=Burwood Tennis Courts, Strathfield Sports Club Tennis |  |
+| P20-hard-weather-unknown-fail-closed | weather | PASS | MAX_ITERATIONS_REACHED; providers=unified-bookings, sportlogic; recommendations=none |  |
+| V21-positive-tennis-proof | provider-integrity | PASS | SATISFACTORY; providers=bookable; recommendations=Aloha Street Tennis Courts |  |
 | F22-provider-partial-failure | failure | PASS | MAX_ITERATIONS_REACHED; providers=bookable; recommendations=none |  |
 
 ## Issues
 
-
+- P0 location resolution/provider routing: Explicit resolvable locations can produce no providers or the wrong default search behavior. Cases: L03-suburb-chatswood-unseen. Root cause: H5 searchScopeForProfile uses static aliases plus configured venue text matching rather than semantic interpretation -> geocoder -> geographic provider discovery.
 
 ## SUSF / USYD Bias
 

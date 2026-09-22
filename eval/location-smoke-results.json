@@ -1,0 +1,784 @@
+{
+  "summary": {
+    "generatedAt": "2026-09-21T13:44:45.750Z",
+    "configured": true,
+    "setupError": null,
+    "total": 5,
+    "geocoderResolved": 3,
+    "staticFallbacks": 2
+  },
+  "results": [
+    {
+      "id": "loc-01-baohuo",
+      "raw": "宝活附近",
+      "canonicalEntity": "Burwood NSW 2134, Australia",
+      "entityType": "suburb",
+      "lat": -33.8773941,
+      "lng": 151.1036621,
+      "confidence": "medium",
+      "source": "google_geocoding",
+      "placeId": "ChIJYdbxl9y6EmsRoK4yFmh9AQU",
+      "providerMetadata": {
+        "provider": "google_geocoding",
+        "providerStatus": "OK",
+        "resultCount": 1,
+        "resultTypes": [
+          "locality",
+          "political"
+        ],
+        "locationType": "APPROXIMATE",
+        "reliabilityDecision": "accepted_first_valid_coordinate_result"
+      },
+      "searchScope": {
+        "locationSource": "explicit",
+        "radiusMeters": 3000,
+        "routingStatus": "matched_geographic_scope",
+        "activeProviderIds": [
+          "sportlogic",
+          "unified-bookings"
+        ]
+      },
+      "providerRouting": {
+        "status": "matched_geographic_scope",
+        "query": "宝活附近",
+        "center": {
+          "lat": -33.8773941,
+          "lng": 151.1036621
+        },
+        "radiusMeters": 3000,
+        "targets": [
+          {
+            "id": "ChIJYdbxl9y6EmsRoK4yFmh9AQU",
+            "text": "宝活附近",
+            "canonicalName": "Burwood NSW 2134, Australia",
+            "entityType": "suburb",
+            "kind": "suburb",
+            "lat": -33.8773941,
+            "lng": 151.1036621,
+            "center": {
+              "lat": -33.8773941,
+              "lng": 151.1036621
+            },
+            "radiusMeters": 3000,
+            "timezone": "Australia/Sydney",
+            "source": "google_geocoding",
+            "confidence": "medium",
+            "placeId": "ChIJYdbxl9y6EmsRoK4yFmh9AQU",
+            "providerMetadata": {
+              "provider": "google_geocoding",
+              "providerStatus": "OK",
+              "resultCount": 1,
+              "resultTypes": [
+                "locality",
+                "political"
+              ],
+              "locationType": "APPROXIMATE",
+              "reliabilityDecision": "accepted_first_valid_coordinate_result"
+            }
+          }
+        ],
+        "matchedVenues": [
+          {
+            "id": "sportlogic-burwood-tennis-courts",
+            "name": "Burwood Tennis Courts",
+            "suburb": "Burwood",
+            "provider": "sportlogic"
+          },
+          {
+            "id": "unified-strathfield-sports-club-tennis",
+            "name": "Strathfield Sports Club Tennis",
+            "suburb": "Strathfield",
+            "provider": "unified-bookings"
+          }
+        ],
+        "activeProviderIds": [
+          "sportlogic",
+          "unified-bookings"
+        ],
+        "matchedVenuesByProvider": {
+          "sportlogic": [
+            {
+              "id": "sportlogic-burwood-tennis-courts",
+              "name": "Burwood Tennis Courts",
+              "suburb": "Burwood",
+              "address": "Park Ave, Burwood NSW 2134",
+              "location": {
+                "lat": -33.8739501,
+                "lng": 151.1018491
+              },
+              "geoSource": "openstreetmap_road_centroid_verified_address",
+              "geoConfidence": "medium",
+              "provider": "sportlogic",
+              "sport": "tennis",
+              "officialUrl": "https://www.tennisvenues.com.au/booking/burwood-tennis-courts",
+              "clientId": "burwood-tennis-courts",
+              "venueId": "1",
+              "enabled": true,
+              "auditCourtCount": 2,
+              "surfaces": [
+                "hard"
+              ]
+            }
+          ],
+          "unified-bookings": [
+            {
+              "id": "unified-strathfield-sports-club-tennis",
+              "name": "Strathfield Sports Club Tennis",
+              "suburb": "Strathfield",
+              "provider": "unified-bookings",
+              "sport": "tennis",
+              "location": {
+                "lat": -33.8791,
+                "lng": 151.0836
+              },
+              "address": "Strathfield, NSW",
+              "officialUrl": "https://booking.strathfieldsportsclub.com.au/booking?uuid=ff5fe060-c9a2-11ea-b131-02cc617d54fa",
+              "locationUuid": "ff5fe060-c9a2-11ea-b131-02cc617d54fa",
+              "enabled": true,
+              "auditCourtCount": 10,
+              "surfaces": [
+                "synthetic"
+              ]
+            }
+          ]
+        }
+      },
+      "usesStaticFallback": false,
+      "usesGeocoder": true,
+      "error": null
+    },
+    {
+      "id": "loc-02-near-central",
+      "raw": "near Central",
+      "canonicalEntity": "Central Station",
+      "entityType": "landmark",
+      "lat": -33.883,
+      "lng": 151.207,
+      "confidence": "high",
+      "source": "static_location_alias",
+      "placeId": null,
+      "providerMetadata": null,
+      "searchScope": {
+        "locationSource": "explicit",
+        "radiusMeters": 3000,
+        "routingStatus": "matched_geographic_scope",
+        "activeProviderIds": [
+          "intrac",
+          "susf",
+          "mindbody"
+        ]
+      },
+      "providerRouting": {
+        "status": "matched_geographic_scope",
+        "query": "near Central",
+        "center": {
+          "lat": -33.883,
+          "lng": 151.207
+        },
+        "radiusMeters": 3000,
+        "targets": [
+          {
+            "id": "central",
+            "text": "near Central",
+            "canonicalName": "Central Station",
+            "entityType": "landmark",
+            "kind": "landmark",
+            "lat": -33.883,
+            "lng": 151.207,
+            "center": {
+              "lat": -33.883,
+              "lng": 151.207
+            },
+            "radiusMeters": 3000,
+            "timezone": "Australia/Sydney",
+            "source": "static_location_alias",
+            "confidence": "high",
+            "placeId": null,
+            "providerMetadata": null
+          }
+        ],
+        "matchedVenues": [
+          {
+            "id": "intrac-moore-park-tennis-courts",
+            "name": "Moore Park Tennis Courts",
+            "suburb": "Moore Park",
+            "provider": "intrac"
+          },
+          {
+            "id": "susf-tennis",
+            "name": "Sydney Uni Sport Tennis Courts",
+            "suburb": "Camperdown",
+            "provider": "susf"
+          },
+          {
+            "id": "intrac-centennial-parklands-sports-centre",
+            "name": "Centennial Parklands Sports Centre Courts",
+            "suburb": "Moore Park",
+            "provider": "intrac"
+          },
+          {
+            "id": "mindbody-rushcutters-bay-park",
+            "name": "Rushcutters Bay Park Tennis Courts",
+            "suburb": "Rushcutters Bay",
+            "provider": "mindbody"
+          },
+          {
+            "id": "intrac-camperdown-tennis",
+            "name": "Camperdown Tennis",
+            "suburb": "Camperdown",
+            "provider": "intrac"
+          }
+        ],
+        "activeProviderIds": [
+          "intrac",
+          "susf",
+          "mindbody"
+        ],
+        "matchedVenuesByProvider": {
+          "intrac": [
+            {
+              "id": "intrac-moore-park-tennis-courts",
+              "name": "Moore Park Tennis Courts",
+              "suburb": "Moore Park",
+              "address": "Cleveland Street, Moore Park NSW 2021",
+              "location": {
+                "lat": -33.8947714,
+                "lng": 151.2200913
+              },
+              "geoSource": "openstreetmap_venue_geometry",
+              "geoConfidence": "high",
+              "provider": "intrac",
+              "sport": "tennis",
+              "officialUrl": "https://parklands.intrac.com.au/sports/schedule.cfm?location=72",
+              "locationId": "72",
+              "enabled": true,
+              "auditCourtCount": 4,
+              "surfaces": [
+                "synthetic"
+              ]
+            },
+            {
+              "id": "intrac-centennial-parklands-sports-centre",
+              "name": "Centennial Parklands Sports Centre Courts",
+              "suburb": "Moore Park",
+              "address": "Corner Anzac Parade and Lang Road, Moore Park NSW 2021",
+              "location": {
+                "lat": -33.89709789,
+                "lng": 151.22277325
+              },
+              "geoSource": "public_map_verified_address",
+              "geoConfidence": "medium",
+              "provider": "intrac",
+              "sport": "tennis",
+              "officialUrl": "https://parklands.intrac.com.au/sports/schedule.cfm?location=55",
+              "referer": "https://parklandssports.com.au/online-court-bookings/",
+              "locationId": "55",
+              "enabled": true,
+              "auditCourtCount": 11,
+              "surfaces": [
+                "synthetic",
+                "hard"
+              ]
+            },
+            {
+              "id": "intrac-camperdown-tennis",
+              "name": "Camperdown Tennis",
+              "suburb": "Camperdown",
+              "address": "33 Mallett Street, Camperdown NSW 2050",
+              "location": {
+                "lat": -33.8883244,
+                "lng": 151.1761332
+              },
+              "geoSource": "openstreetmap_pitch_verified_address",
+              "geoConfidence": "high",
+              "provider": "intrac",
+              "sport": "tennis",
+              "officialUrl": "https://camperdowntennis.intrac.com.au/tennis/book.cfm?location=70",
+              "locationId": "70",
+              "enabled": true,
+              "auditCourtCount": 6,
+              "surfaces": [
+                "synthetic"
+              ]
+            }
+          ],
+          "susf": [
+            {
+              "id": "susf-tennis",
+              "name": "Sydney Uni Sport Tennis Courts",
+              "suburb": "Camperdown",
+              "provider": "susf",
+              "providerVenueId": "susf",
+              "sport": "tennis",
+              "location": {
+                "lat": -33.8886,
+                "lng": 151.1873
+              },
+              "enabled": true,
+              "surfaces": [
+                "hard",
+                "synthetic"
+              ]
+            }
+          ],
+          "mindbody": [
+            {
+              "id": "mindbody-rushcutters-bay-park",
+              "name": "Rushcutters Bay Park Tennis Courts",
+              "suburb": "Rushcutters Bay",
+              "address": "7 Waratah Street, Rushcutters Bay NSW 2011",
+              "location": {
+                "lat": -33.8751,
+                "lng": 151.233
+              },
+              "provider": "mindbody",
+              "sport": "tennis",
+              "officialUrl": "https://go.mindbodyonline.com/book/widgets/appointments/view/cd14736c24d/schedule?locationId=1&serviceId=30&staffId=any_staff",
+              "widgetId": "cd14736c24d",
+              "locationId": "1",
+              "serviceId": "30",
+              "durationMinutes": 60,
+              "enabled": true,
+              "auditCourtCount": 5,
+              "surfaces": [
+                "synthetic"
+              ]
+            }
+          ]
+        }
+      },
+      "usesStaticFallback": true,
+      "usesGeocoder": false,
+      "error": null
+    },
+    {
+      "id": "loc-03-usyd",
+      "raw": "USYD",
+      "canonicalEntity": "University of Sydney",
+      "entityType": "landmark",
+      "lat": -33.8886,
+      "lng": 151.1873,
+      "confidence": "high",
+      "source": "static_location_alias",
+      "placeId": null,
+      "providerMetadata": null,
+      "searchScope": {
+        "locationSource": "explicit",
+        "radiusMeters": 3000,
+        "routingStatus": "matched_geographic_scope",
+        "activeProviderIds": [
+          "susf",
+          "intrac"
+        ]
+      },
+      "providerRouting": {
+        "status": "matched_geographic_scope",
+        "query": "USYD",
+        "center": {
+          "lat": -33.8886,
+          "lng": 151.1873
+        },
+        "radiusMeters": 3000,
+        "targets": [
+          {
+            "id": "usyd",
+            "text": "USYD",
+            "canonicalName": "University of Sydney",
+            "entityType": "landmark",
+            "kind": "landmark",
+            "lat": -33.8886,
+            "lng": 151.1873,
+            "center": {
+              "lat": -33.8886,
+              "lng": 151.1873
+            },
+            "radiusMeters": 3000,
+            "timezone": "Australia/Sydney",
+            "source": "static_location_alias",
+            "confidence": "high",
+            "placeId": null,
+            "providerMetadata": null
+          }
+        ],
+        "matchedVenues": [
+          {
+            "id": "susf-tennis",
+            "name": "Sydney Uni Sport Tennis Courts",
+            "suburb": "Camperdown",
+            "provider": "susf"
+          },
+          {
+            "id": "intrac-camperdown-tennis",
+            "name": "Camperdown Tennis",
+            "suburb": "Camperdown",
+            "provider": "intrac"
+          }
+        ],
+        "activeProviderIds": [
+          "susf",
+          "intrac"
+        ],
+        "matchedVenuesByProvider": {
+          "susf": [
+            {
+              "id": "susf-tennis",
+              "name": "Sydney Uni Sport Tennis Courts",
+              "suburb": "Camperdown",
+              "provider": "susf",
+              "providerVenueId": "susf",
+              "sport": "tennis",
+              "location": {
+                "lat": -33.8886,
+                "lng": 151.1873
+              },
+              "enabled": true,
+              "surfaces": [
+                "hard",
+                "synthetic"
+              ]
+            }
+          ],
+          "intrac": [
+            {
+              "id": "intrac-camperdown-tennis",
+              "name": "Camperdown Tennis",
+              "suburb": "Camperdown",
+              "address": "33 Mallett Street, Camperdown NSW 2050",
+              "location": {
+                "lat": -33.8883244,
+                "lng": 151.1761332
+              },
+              "geoSource": "openstreetmap_pitch_verified_address",
+              "geoConfidence": "high",
+              "provider": "intrac",
+              "sport": "tennis",
+              "officialUrl": "https://camperdowntennis.intrac.com.au/tennis/book.cfm?location=70",
+              "locationId": "70",
+              "enabled": true,
+              "auditCourtCount": 6,
+              "surfaces": [
+                "synthetic"
+              ]
+            }
+          ]
+        }
+      },
+      "usesStaticFallback": true,
+      "usesGeocoder": false,
+      "error": null
+    },
+    {
+      "id": "loc-04-chatswood",
+      "raw": "Chatswood",
+      "canonicalEntity": "Chatswood NSW 2067, Australia",
+      "entityType": "suburb",
+      "lat": -33.7960696,
+      "lng": 151.1780469,
+      "confidence": "medium",
+      "source": "google_geocoding",
+      "placeId": "ChIJQQZjH9SoEmsRwLAyFmh9AQU",
+      "providerMetadata": {
+        "provider": "google_geocoding",
+        "providerStatus": "OK",
+        "resultCount": 1,
+        "resultTypes": [
+          "locality",
+          "political"
+        ],
+        "locationType": "APPROXIMATE",
+        "reliabilityDecision": "accepted_first_valid_coordinate_result"
+      },
+      "searchScope": {
+        "locationSource": "explicit",
+        "radiusMeters": 3000,
+        "routingStatus": "matched_geographic_scope",
+        "activeProviderIds": [
+          "sportlogic",
+          "bookable"
+        ]
+      },
+      "providerRouting": {
+        "status": "matched_geographic_scope",
+        "query": "Chatswood",
+        "center": {
+          "lat": -33.7960696,
+          "lng": 151.1780469
+        },
+        "radiusMeters": 3000,
+        "targets": [
+          {
+            "id": "ChIJQQZjH9SoEmsRwLAyFmh9AQU",
+            "text": "Chatswood",
+            "canonicalName": "Chatswood NSW 2067, Australia",
+            "entityType": "suburb",
+            "kind": "suburb",
+            "lat": -33.7960696,
+            "lng": 151.1780469,
+            "center": {
+              "lat": -33.7960696,
+              "lng": 151.1780469
+            },
+            "radiusMeters": 3000,
+            "timezone": "Australia/Sydney",
+            "source": "google_geocoding",
+            "confidence": "medium",
+            "placeId": "ChIJQQZjH9SoEmsRwLAyFmh9AQU",
+            "providerMetadata": {
+              "provider": "google_geocoding",
+              "providerStatus": "OK",
+              "resultCount": 1,
+              "resultTypes": [
+                "locality",
+                "political"
+              ],
+              "locationType": "APPROXIMATE",
+              "reliabilityDecision": "accepted_first_valid_coordinate_result"
+            }
+          }
+        ],
+        "matchedVenues": [
+          {
+            "id": "sportlogic-artarmon-tennis-centre",
+            "name": "Artarmon Tennis Centre",
+            "suburb": "Artarmon",
+            "provider": "sportlogic"
+          },
+          {
+            "id": "bookable-krg-lindfield-soldiers-memorial-park",
+            "name": "Lindfield Soldiers Memorial Park tennis courts",
+            "suburb": "Lindfield",
+            "provider": "bookable"
+          }
+        ],
+        "activeProviderIds": [
+          "sportlogic",
+          "bookable"
+        ],
+        "matchedVenuesByProvider": {
+          "sportlogic": [
+            {
+              "id": "sportlogic-artarmon-tennis-centre",
+              "name": "Artarmon Tennis Centre",
+              "suburb": "Artarmon",
+              "address": "Cleland Park, Cnr Hampden Rd and Barton Rd, Artarmon NSW 2064",
+              "location": {
+                "lat": -33.81174,
+                "lng": 151.18746
+              },
+              "geoSource": "tennisvenues_venue_page",
+              "geoConfidence": "high",
+              "provider": "sportlogic",
+              "sport": "tennis",
+              "officialUrl": "https://www.tennisvenues.com.au/booking/artarmon-tennis",
+              "clientId": "artarmon-tennis",
+              "enabled": true,
+              "auditCourtCount": 6,
+              "allowPartialCourtIdentity": true,
+              "surfaces": [
+                "synthetic"
+              ]
+            }
+          ],
+          "bookable": [
+            {
+              "id": "bookable-krg-lindfield-soldiers-memorial-park",
+              "name": "Lindfield Soldiers Memorial Park tennis courts",
+              "suburb": "Lindfield",
+              "address": "62 Tryon Road, East Lindfield NSW 2070",
+              "location": {
+                "lat": -33.7693794,
+                "lng": 151.1789161
+              },
+              "geoSource": "openstreetmap_address_verified_council_location",
+              "geoConfidence": "medium",
+              "council": "Ku-ring-gai Council",
+              "provider": "bookable",
+              "sport": "tennis",
+              "officialUrl": "https://krg.bookable.net.au/venues/8/lindfield-soldiers-memorial-park-tennis-courts",
+              "venueId": 8,
+              "organisationId": 1,
+              "enabled": true,
+              "auditCourtCount": 2,
+              "surfaces": [
+                "synthetic"
+              ]
+            }
+          ]
+        }
+      },
+      "usesStaticFallback": false,
+      "usesGeocoder": true,
+      "error": null
+    },
+    {
+      "id": "loc-05-unseen-landmark",
+      "raw": "Queen Victoria Building Sydney",
+      "canonicalEntity": "455 George St, Sydney NSW 2000, Australia",
+      "entityType": "poi",
+      "lat": -33.8717161,
+      "lng": 151.2067008,
+      "confidence": "high",
+      "source": "google_geocoding",
+      "placeId": "ChIJISz8NjyuEmsRFTQ9Iw7Ear8",
+      "providerMetadata": {
+        "provider": "google_geocoding",
+        "providerStatus": "OK",
+        "resultCount": 1,
+        "resultTypes": [
+          "establishment",
+          "point_of_interest",
+          "shopping_mall"
+        ],
+        "locationType": "ROOFTOP",
+        "reliabilityDecision": "accepted_first_valid_coordinate_result"
+      },
+      "searchScope": {
+        "locationSource": "explicit",
+        "radiusMeters": 3000,
+        "routingStatus": "matched_geographic_scope",
+        "activeProviderIds": [
+          "mindbody",
+          "susf",
+          "intrac"
+        ]
+      },
+      "providerRouting": {
+        "status": "matched_geographic_scope",
+        "query": "Queen Victoria Building Sydney",
+        "center": {
+          "lat": -33.8717161,
+          "lng": 151.2067008
+        },
+        "radiusMeters": 3000,
+        "targets": [
+          {
+            "id": "ChIJISz8NjyuEmsRFTQ9Iw7Ear8",
+            "text": "Queen Victoria Building Sydney",
+            "canonicalName": "455 George St, Sydney NSW 2000, Australia",
+            "entityType": "poi",
+            "kind": "poi",
+            "lat": -33.8717161,
+            "lng": 151.2067008,
+            "center": {
+              "lat": -33.8717161,
+              "lng": 151.2067008
+            },
+            "radiusMeters": 3000,
+            "timezone": "Australia/Sydney",
+            "source": "google_geocoding",
+            "confidence": "high",
+            "placeId": "ChIJISz8NjyuEmsRFTQ9Iw7Ear8",
+            "providerMetadata": {
+              "provider": "google_geocoding",
+              "providerStatus": "OK",
+              "resultCount": 1,
+              "resultTypes": [
+                "establishment",
+                "point_of_interest",
+                "shopping_mall"
+              ],
+              "locationType": "ROOFTOP",
+              "reliabilityDecision": "accepted_first_valid_coordinate_result"
+            }
+          }
+        ],
+        "matchedVenues": [
+          {
+            "id": "mindbody-rushcutters-bay-park",
+            "name": "Rushcutters Bay Park Tennis Courts",
+            "suburb": "Rushcutters Bay",
+            "provider": "mindbody"
+          },
+          {
+            "id": "susf-tennis",
+            "name": "Sydney Uni Sport Tennis Courts",
+            "suburb": "Camperdown",
+            "provider": "susf"
+          },
+          {
+            "id": "intrac-moore-park-tennis-courts",
+            "name": "Moore Park Tennis Courts",
+            "suburb": "Moore Park",
+            "provider": "intrac"
+          }
+        ],
+        "activeProviderIds": [
+          "mindbody",
+          "susf",
+          "intrac"
+        ],
+        "matchedVenuesByProvider": {
+          "mindbody": [
+            {
+              "id": "mindbody-rushcutters-bay-park",
+              "name": "Rushcutters Bay Park Tennis Courts",
+              "suburb": "Rushcutters Bay",
+              "address": "7 Waratah Street, Rushcutters Bay NSW 2011",
+              "location": {
+                "lat": -33.8751,
+                "lng": 151.233
+              },
+              "provider": "mindbody",
+              "sport": "tennis",
+              "officialUrl": "https://go.mindbodyonline.com/book/widgets/appointments/view/cd14736c24d/schedule?locationId=1&serviceId=30&staffId=any_staff",
+              "widgetId": "cd14736c24d",
+              "locationId": "1",
+              "serviceId": "30",
+              "durationMinutes": 60,
+              "enabled": true,
+              "auditCourtCount": 5,
+              "surfaces": [
+                "synthetic"
+              ]
+            }
+          ],
+          "susf": [
+            {
+              "id": "susf-tennis",
+              "name": "Sydney Uni Sport Tennis Courts",
+              "suburb": "Camperdown",
+              "provider": "susf",
+              "providerVenueId": "susf",
+              "sport": "tennis",
+              "location": {
+                "lat": -33.8886,
+                "lng": 151.1873
+              },
+              "enabled": true,
+              "surfaces": [
+                "hard",
+                "synthetic"
+              ]
+            }
+          ],
+          "intrac": [
+            {
+              "id": "intrac-moore-park-tennis-courts",
+              "name": "Moore Park Tennis Courts",
+              "suburb": "Moore Park",
+              "address": "Cleveland Street, Moore Park NSW 2021",
+              "location": {
+                "lat": -33.8947714,
+                "lng": 151.2200913
+              },
+              "geoSource": "openstreetmap_venue_geometry",
+              "geoConfidence": "high",
+              "provider": "intrac",
+              "sport": "tennis",
+              "officialUrl": "https://parklands.intrac.com.au/sports/schedule.cfm?location=72",
+              "locationId": "72",
+              "enabled": true,
+              "auditCourtCount": 4,
+              "surfaces": [
+                "synthetic"
+              ]
+            }
+          ]
+        }
+      },
+      "usesStaticFallback": false,
+      "usesGeocoder": true,
+      "error": null
+    }
+  ]
+}
