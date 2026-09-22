@@ -217,6 +217,11 @@
         box-shadow: inset 0 0 0 2px rgba(30, 138, 30, 0.24);
       }
 
+      textarea::placeholder {
+        color: var(--muted);
+        opacity: 1;
+      }
+
       .char-count {
         position: absolute;
         right: 20px;
@@ -861,6 +866,20 @@
         background: rgba(204, 227, 189, 0.57);
         color: var(--ink);
         font-size: 10px;
+        cursor: pointer;
+        transition: background 160ms ease, transform 160ms ease;
+      }
+
+      .feedback-chip:hover,
+      .feedback-chip:focus-visible,
+      .feedback-chip.is-selected {
+        background: rgba(176, 211, 153, 0.78);
+        transform: translateY(-1px);
+      }
+
+      .feedback-chip:focus-visible {
+        outline: 2px solid rgba(36, 91, 39, 0.3);
+        outline-offset: 2px;
       }
 
       .search-again {
@@ -1081,7 +1100,7 @@
             <h2 id="request-title" class="section-title">What are you looking for?</h2>
             <label class="prompt-wrap">
               <span class="sr-only">Tell CourtPilot what matters</span>
-              <textarea id="court-request" name="request" maxlength="500">这几天我想打球，这周六我有事，周日晚上八点后能打，不要太热，$25左右</textarea>
+              <textarea id="court-request" name="request" maxlength="500" placeholder="这几天我想打球，这周六我有事，周日晚上八点后能打，不要太热，$25左右"></textarea>
               <span id="char-count" class="char-count">0/500</span>
             </label>
             <button id="find-court" class="primary-button" type="submit">✦ Find my court →</button>
@@ -1152,11 +1171,12 @@
               <div id="why-list" class="reason-list"></div>
             </div>
           </div>
-          <div class="feedback-row" aria-label="Feedback reasons">
-            <span class="feedback-chip">Too Expensive</span>
-            <span class="feedback-chip">Too Far</span>
-            <span class="feedback-chip">Wrong Time</span>
-            <span class="feedback-chip">Bad Weather</span>
+          <div class="feedback-row" aria-label="Result feedback">
+            <button class="feedback-chip" type="button" data-feedback-reason="wrong_availability" aria-pressed="false">Wrong availability</button>
+            <button class="feedback-chip" type="button" data-feedback-reason="too_expensive" aria-pressed="false">Price feels wrong</button>
+            <button class="feedback-chip" type="button" data-feedback-reason="too_far" aria-pressed="false">Too far</button>
+            <button class="feedback-chip" type="button" data-feedback-reason="wrong_time" aria-pressed="false">Wrong time</button>
+            <button class="feedback-chip" type="button" data-feedback-reason="bad_weather" aria-pressed="false">Weather concern</button>
           </div>
         </section>
 

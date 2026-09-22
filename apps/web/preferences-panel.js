@@ -150,6 +150,7 @@ function emptyBehaviorHistory() {
     recentSearches: [],
     recentSelections: [],
     recentBookingClicks: [],
+    recentFeedbackClicks: [],
   };
 }
 
@@ -165,6 +166,7 @@ function normalizeBehaviorHistory(behavior = {}) {
     recentSearches: boundedNewest(behavior.recentSearches),
     recentSelections: boundedNewest(behavior.recentSelections),
     recentBookingClicks: boundedNewest(behavior.recentBookingClicks),
+    recentFeedbackClicks: boundedNewest(behavior.recentFeedbackClicks),
   };
 }
 
@@ -278,6 +280,7 @@ function summarizeBehaviorHistory() {
   return {
     bookingClickCount: history.recentBookingClicks.length,
     selectionCount: history.recentSelections.length,
+    feedbackClickCount: history.recentFeedbackClicks.length,
     searchCount: history.recentSearches.length,
     timeBuckets,
     recentStartTimes: rows.slice(0, 10).map((item) => item.localTime),
@@ -294,6 +297,13 @@ function summarizeBehaviorHistory() {
     recentSelections: history.recentSelections.slice(0, 10).map((item) => ({
       startTime: item.startTime,
       localTime: localTimeFromStartTime(item.startTime),
+      venue: item.venue,
+      court: item.court,
+    })),
+    recentFeedbackClicks: history.recentFeedbackClicks.slice(0, 10).map((item) => ({
+      reason: item.reason,
+      candidateId: item.candidateId,
+      startTime: item.startTime,
       venue: item.venue,
       court: item.court,
     })),
@@ -384,6 +394,15 @@ function formatTimeForChip(value) {
   return `${displayHours}:${match[2]} ${suffix}`;
 }
 
+function formatMinutesForChip(minutes) {
+  const value = Number(minutes);
+  if (!Number.isFinite(value)) return null;
+  if (value === 60) return '1 hour';
+  if (value === 90) return '1.5 hours';
+  if (value === 120) return '2 hours';
+  return `${value} min`;
+}
+
 function describeProfileChipsFromUserProfile(userProfile) {
   if (!userProfile) return [];
   const chips = [];
@@ -399,28 +418,89 @@ function describeProfileChipsFromUserProfile(userProfile) {
   return chips;
 }
 
-function describeRule(item) {
-  const parts = [];
-  if (item.rule?.before) parts.push(`Before ${item.rule.before}`);
-  if (item.rule?.after) parts.push(`After ${item.rule.after}`);
-  if (item.rule?.equals) parts.push(`At ${item.rule.equals}`);
-  if (item.rule?.start && item.rule?.end) parts.push(`${item.rule.start} - ${item.rule.end}`);
-  if (item.rule?.period) parts.push(item.rule.period);
-  if (item.rule?.condition) parts.push(item.rule.condition);
-  if (item.rule?.max !== undefined) parts.push(`Max ${item.rule.max}`);
-  if (item.rule?.preferredRange) {
-    parts.push(`Around ${item.rule.preferredRange.min}-${item.rule.preferredRange.max}`);
-  }
-  if (item.rule?.dateRange?.type) parts.push(item.rule.dateRange.type);
-  if (item.target !== undefined) parts.push(String(item.target));
-  if (item.direction) parts.push(item.direction === 'lower' ? 'Cheaper' : item.direction);
-  return parts.join(', ') || item.sourceText || item.feature || 'Preference';
-}
-
 function labelForFeature(feature) {
   return String(feature ?? '')
     .replaceAll('_', ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function listRuleValues(rule = {}) {
+  return [...(rule.include ?? rule.values ?? [])].filter(Boolean);
+}
+
+function describePreferenceChip(item) {
+  const rule = item.rule ?? {};
+  const listValues = listRuleValues(rule);
+
+  switch (item.feature) {
+    case 'price': {
+      if (rule.max !== undefined && rule.max !== null) return `Up to $${rule.max}`;
+      if (rule.preferredRange?.min !== undefined && rule.preferredRange?.max !== undefined) {
+        return `$${rule.preferredRange.min}-$${rule.preferredRange.max}`;
+      }
+      return 'Lower price';
+    }
+    case 'next_hour_free':
+      return item.target === false ? 'No extra hour needed' : 'Next hour also available';
+    case 'start_time': {
+      if (rule.before && rule.after) {
+        return `Before ${formatTimeForChip(rule.before)} or after ${formatTimeForChip(rule.after)}`;
+      }
+      if (rule.before) return `Before ${formatTimeForChip(rule.before)}`;
+      if (rule.after) return `After ${formatTimeForChip(rule.after)}`;
+      if (rule.equals) return `At ${formatTimeForChip(rule.equals)}`;
+      if (rule.start && rule.end) {
+        return `${formatTimeForChip(rule.start)} - ${formatTimeForChip(rule.end)}`;
+      }
+      if (rule.period) return `${rule.period[0].toUpperCase()}${rule.period.slice(1)}`;
+      return 'Preferred time';
+    }
+    case 'weather': {
+      const weatherLabels = {
+        no_rain: 'No rain',
+        no_precipitation: 'No rain',
+        not_too_hot: 'Avoid hot weather',
+        comfortable: 'Comfortable weather',
+      };
+      if (rule.maxTemperatureC !== undefined && rule.maxTemperatureC !== null) {
+        return `Up to ${rule.maxTemperatureC}\u00b0C`;
+      }
+      return weatherLabels[rule.condition] ?? 'Preferred weather';
+    }
+    case 'duration': {
+      const minutes = rule.exactMinutes ?? rule.preferredMinutes ?? rule.minMinutes;
+      return formatMinutesForChip(minutes) ?? 'Preferred duration';
+    }
+    case 'travel_time': {
+      const minutes = rule.maxMinutes ?? rule.maxTransitMinutes ?? rule.maxWalkMinutes ?? rule.preferredMaxMinutes;
+      return Number.isFinite(Number(minutes)) ? `Within ${minutes} min travel` : 'Shorter travel';
+    }
+    case 'consecutive_availability': {
+      const duration = formatMinutesForChip(rule.preferredMinutes);
+      return duration ? `${duration} available` : 'Longer availability';
+    }
+    case 'date':
+      return rule.dateRange?.type
+        ? labelForFeature(rule.dateRange.type)
+        : 'Preferred dates';
+    case 'venue':
+    case 'court':
+    case 'area':
+    case 'surface':
+    case 'venue_setting':
+      return listValues.length ? listValues.join(', ') : labelForFeature(item.feature);
+    case 'court_count':
+      if (rule.exact) return `${rule.exact} courts`;
+      if (rule.min) return `${rule.min}+ courts`;
+      if (rule.max) return `Up to ${rule.max} courts`;
+      return 'Multiple courts';
+    case 'adjacency':
+      return 'Adjacent courts';
+    default:
+      return item.sourceText && item.sourceText !== 'structured'
+        ? item.sourceText
+        : labelForFeature(item.feature);
+  }
 }
 
 function chipsFromPreferenceProfile(profile) {
@@ -429,16 +509,7 @@ function chipsFromPreferenceProfile(profile) {
     ...(profile?.preferences ?? []),
     ...(profile?.objectives ?? []),
   ];
-  return items.map((item) => {
-    const detail = describeRule(item);
-    if (!detail || detail === 'structured') return labelForFeature(item.feature);
-    if (item.feature === 'price' && detail.toLowerCase().includes('cheaper')) return 'Cheaper price';
-    if (item.feature === 'start_time') return detail;
-    if (item.feature === 'next_hour_free') return 'Next hour free';
-    if (item.feature === 'duration') return detail;
-    if (item.feature === 'venue') return detail;
-    return detail.length <= 22 ? detail : labelForFeature(item.feature);
-  }).filter(Boolean);
+  return [...new Set(items.map(describePreferenceChip).filter(Boolean))];
 }
 
 function renderProfileChips(target, chips) {
@@ -560,18 +631,14 @@ function formatWeatherValue(weather) {
 
 function formatDistance(distanceKm) {
   if (!Number.isFinite(distanceKm)) return null;
-  return `${distanceKm.toFixed(distanceKm < 10 ? 1 : 0)} km`;
+  const rounded = distanceKm < 10 ? distanceKm.toFixed(1) : distanceKm.toFixed(0);
+  return `${rounded.replace(/\.0$/, '')}km`;
 }
 
-function formatCandidateDistances(candidate) {
-  const currentDistance = formatDistance(
-    candidate.currentLocationDistanceKm ?? candidate.distanceKm,
-  );
-  const targetDistance = formatDistance(candidate.targetLocationDistanceKm);
-  return [
-    currentDistance ? `From current location ${currentDistance}` : null,
-    targetDistance ? `From target location ${targetDistance}` : null,
-  ].filter(Boolean).join(' · ') || null;
+function formatCandidateLocation(candidate) {
+  const suburb = candidate.suburb ?? candidate.area ?? null;
+  const currentDistance = formatDistance(candidate.currentLocationDistanceKm ?? candidate.distanceKm);
+  return [suburb, currentDistance].filter(Boolean).join(' ') || null;
 }
 
 function formatTimeRange(candidate) {
@@ -678,7 +745,7 @@ function renderBookingAction(booking, candidate = null, context = 'candidate') {
 function renderCandidateCard(candidate, isBest = false) {
   const details = [
     candidate.court,
-    formatCandidateDistances(candidate),
+    formatCandidateLocation(candidate),
     formatTimeRange(candidate),
     freshnessLabel(candidate),
   ].filter(Boolean);
@@ -716,6 +783,17 @@ function renderWhyResult(candidate) {
   const tradeoffs = (candidate?.tradeoffs ?? []).slice(0, 2);
   const lines = [...reasons, ...tradeoffs];
   whyCard.classList.toggle('is-visible', lines.length > 0);
+  whyCard.dataset.candidateId = candidate?.id ?? '';
+  whyCard.dataset.venue = candidate?.venue ?? '';
+  whyCard.dataset.suburb = candidate?.suburb ?? '';
+  whyCard.dataset.court = candidate?.court ?? '';
+  whyCard.dataset.startTime = candidate?.startTime ?? '';
+  whyCard.dataset.durationMinutes = candidate?.durationMinutes ?? '';
+  whyCard.dataset.rank = candidate?.rank ?? '';
+  whyCard.querySelectorAll('[data-feedback-reason]').forEach((button) => {
+    button.classList.remove('is-selected');
+    button.setAttribute('aria-pressed', 'false');
+  });
   whyList.innerHTML = lines
     .map((line) => `<p>✓ ${escapeHtml(line)}</p>`)
     .join('');
@@ -1054,6 +1132,25 @@ editProfileButtons.forEach((button) => {
 searchAgainButton.addEventListener('click', handleSearchAgain);
 
 document.addEventListener('click', async (event) => {
+  const feedbackButton = event.target.closest('[data-feedback-reason]');
+  if (feedbackButton) {
+    const feedback = {
+      reason: feedbackButton.dataset.feedbackReason || null,
+      candidateId: whyCard.dataset.candidateId || null,
+      rank: Number(whyCard.dataset.rank) || null,
+      venue: whyCard.dataset.venue || null,
+      suburb: whyCard.dataset.suburb || null,
+      court: whyCard.dataset.court || null,
+      startTime: whyCard.dataset.startTime || null,
+      durationMinutes: Number(whyCard.dataset.durationMinutes) || null,
+    };
+    appendBehavior('recentFeedbackClicks', feedback);
+    trackEvent('recommendation_feedback_clicked', feedback);
+    feedbackButton.classList.add('is-selected');
+    feedbackButton.setAttribute('aria-pressed', 'true');
+    return;
+  }
+
   const link = event.target.closest('[data-behavior="booking-click"]');
   if (!link) return;
   appendBehavior('recentBookingClicks', {

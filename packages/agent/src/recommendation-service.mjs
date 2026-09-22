@@ -967,15 +967,16 @@ function serializeCandidate(entry, index = entry.ranking.rank - 1, {
   const currentLocationDistanceKm = currentLocation
     ? candidateDistanceToTargetsKm(candidate, [currentLocation])
     : null;
-  const targetLocationDistanceKm = searchScope?.locationSource === 'explicit'
-    ? candidateDistanceKm(candidate, searchScope)
-    : null;
+  const suburb = candidate.source?.canonicalAvailability?.venue?.suburb
+    ?? venueMetadata?.suburb
+    ?? null;
 
   return {
     id: candidate.id,
     rank: index + 1,
     originalRank: ranking.rank,
     venue: candidate.venue,
+    suburb,
     court: candidate.court,
     startTime: candidate.startTime,
     endTime,
@@ -983,7 +984,6 @@ function serializeCandidate(entry, index = entry.ranking.rank - 1, {
     localTime: candidate.features?.localTime ?? null,
     distanceKm: Number.isFinite(currentLocationDistanceKm) ? currentLocationDistanceKm : null,
     currentLocationDistanceKm: Number.isFinite(currentLocationDistanceKm) ? currentLocationDistanceKm : null,
-    targetLocationDistanceKm: Number.isFinite(targetLocationDistanceKm) ? targetLocationDistanceKm : null,
     durationMinutes: candidate.durationMinutes,
     componentSlots: candidate.componentSlots ?? [],
     surface: surfaces[0] ?? null,

@@ -224,7 +224,7 @@ test('recommendation service preserves the LLM-selected slate order', async () =
   assert.match(result.candidates[1].marginalValue, /different choice/);
 });
 
-test('recommendation cards expose current and explicit target distances separately', async () => {
+test('recommendation cards expose current-location distance without target-distance metadata', async () => {
   const profile = normalizePreferenceProfile({
     version: 2,
     searchScope: { location: 'USYD', source: 'user', isExplicit: true },
@@ -258,9 +258,7 @@ test('recommendation cards expose current and explicit target distances separate
   });
 
   assert.equal(Number.isFinite(result.candidates[0].currentLocationDistanceKm), true);
-  assert.equal(Number.isFinite(result.candidates[0].targetLocationDistanceKm), true);
   assert.equal(result.candidates[0].distanceKm, result.candidates[0].currentLocationDistanceKm);
-  assert.notEqual(result.candidates[0].currentLocationDistanceKm, result.candidates[0].targetLocationDistanceKm);
 });
 
 test('explicit CBD provider options never fall back to all Bookable venues', () => {
