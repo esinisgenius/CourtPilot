@@ -701,6 +701,10 @@ function contextLocationSource(profile, {
     ?? baseScope.location
     ?? null;
   if (explicit && !relativeLocationOnly(explicit)) return { kind: 'explicit', value: explicit };
+  const thematicSearch = preferredVenueSettings(profile).length > 0 || preferredSurfaces(profile).length > 0;
+  if (!explicit && thematicSearch) {
+    return { kind: 'sydney_fallback', value: cloneTarget(SYDNEY_FALLBACK_LOCATION) };
+  }
   if (profileLocation) return { kind: 'profile_preferred_location', value: profileLocation };
   if (currentLocation) return { kind: 'current_location', value: currentLocation };
   if (explicit) return { kind: 'explicit', value: explicit };

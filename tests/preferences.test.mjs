@@ -610,6 +610,21 @@ test('generic coastal wording is not preserved as a fake explicit location', () 
   assert.deepEqual(findItem(profile.preferences, 'venue_setting').rule.include, ['coastal']);
 });
 
+test('coastal court wording with filler words is not preserved as a fake explicit location', () => {
+  const profile = normalizePreferenceProfile({
+    version: 2,
+    searchScope: { days: 7, location: '海边的球场' },
+    preferences: [],
+    hardConstraints: [],
+    objectives: [],
+    unresolvedPreferences: [],
+  }, { sourceText: '我想在海边的球场打球' });
+
+  assert.equal(profile.searchScope.location, undefined);
+  assert.equal(profile.searchScope.isExplicit, false);
+  assert.deepEqual(findItem(profile.preferences, 'venue_setting').rule.include, ['coastal']);
+});
+
 test('court surface wording normalizes to canonical surface preferences', () => {
   const cases = [
     ['Clay Court', 'clay'],

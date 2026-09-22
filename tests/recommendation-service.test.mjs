@@ -651,6 +651,27 @@ test('coastal semantic preference recalls tagged realtime venues without treatin
   assert.equal(matchedNames.includes('Burwood Tennis Courts'), false);
 });
 
+test('device location does not constrain a coastal thematic search', async () => {
+  const profile = normalizePreferenceProfile({
+    version: 2,
+    searchScope: { days: 7 },
+    preferences: [],
+    hardConstraints: [],
+    objectives: [],
+    unresolvedPreferences: [],
+  }, { sourceText: '我想在海边的球场打球' });
+  const routedScope = await searchScopeForProfileContext(profile, {
+    currentLocation: { lat: -33.8775, lng: 151.1035, label: 'Current location' },
+  });
+  const matchedNames = routedScope.locationRouting.matchedVenues.map((venue) => venue.name);
+
+  assert.equal(routedScope.locationSource, 'sydney_fallback');
+  assert.deepEqual(routedScope.venueSettings, ['coastal']);
+  assert.equal(matchedNames.includes('Collaroy Tennis Club'), true);
+  assert.equal(matchedNames.includes('Pinecourt Tennis Club'), true);
+  assert.equal(matchedNames.includes('Burwood Tennis Courts'), false);
+});
+
 test('scenic semantic preference returns tagged static venues as nearby courts without fake slots', () => {
   const profile = normalizePreferenceProfile({
     version: 2,

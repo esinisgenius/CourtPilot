@@ -447,6 +447,17 @@ function upsertSoftPreference(preferences, preference) {
   return [...preferences, preference];
 }
 
+function isGenericVenueSettingLocation(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (!normalized) return false;
+  const exactGenericLocations = new Set([
+    '海边', '靠海', '海景', '海岸', '风景好', '景色好',
+    'scenic', 'coastal', 'seaside', 'beach', 'ocean',
+  ]);
+  if (exactGenericLocations.has(normalized)) return true;
+  return /^(?:在|去|找|想找)?(?:海边|靠海|海景|海岸|风景好|景色好)(?:的)?(?:网球)?(?:球场|场)?$/.test(normalized);
+}
+
 function repairNaturalLanguageSemantics(profile) {
   const text = profile.sourceText ?? '';
 
@@ -506,8 +517,7 @@ function repairNaturalLanguageSemantics(profile) {
       profile.hardConstraints,
       (constraint) => constraint.feature === 'venue_setting',
     );
-    const genericSettingLocations = new Set(['海边', '靠海', '海景', '风景好', '景色好', 'scenic', 'coastal', 'seaside']);
-    if (genericSettingLocations.has(String(profile.searchScope?.location ?? '').trim().toLowerCase())) {
+    if (isGenericVenueSettingLocation(profile.searchScope?.location)) {
       delete profile.searchScope.location;
       profile.searchScope.isExplicit = hasExplicitSearchScope(profile.searchScope);
     }
