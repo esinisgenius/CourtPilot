@@ -120,8 +120,6 @@ async function bootstrapAnonymousSession(venue, { signal = null } = {}) {
     args: [
       '--disable-dev-shm-usage',
       '--disable-gpu',
-      '--no-zygote',
-      '--single-process',
     ],
   });
   const abortHandler = () => {
